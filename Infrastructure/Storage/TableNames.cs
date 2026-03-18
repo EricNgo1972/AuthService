@@ -1,0 +1,12 @@
+namespace AuthService.Infrastructure.Storage;
+
+public sealed class TableNames
+{
+    public const string Users = "Users";
+    public const string UserEmailIndex = "UserEmailIndex";
+    public const string RefreshSessions = "RefreshSessions";
+    public const string RefreshTokenIndex = "RefreshTokenIndex";
+    public const string PasswordReset = "PasswordReset";
+    public const string PasswordResetIndex = "PasswordResetIndex";
+    public const string AuditLogs = "AuditLogs";
+}
