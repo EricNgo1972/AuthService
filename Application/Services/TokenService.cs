@@ -4,6 +4,7 @@ using System.Security.Cryptography;
 using System.Text;
 using AuthService.Application.Interfaces;
 using AuthService.Domain.Entities;
+using AuthService.Domain.Enums;
 using AuthService.Shared.Models;
 using Microsoft.Extensions.Configuration;
 using Microsoft.IdentityModel.Tokens;
@@ -20,26 +21,46 @@ public sealed class TokenService(
     private readonly string _audience = configuration["Jwt:Audience"] ?? "AuthService.Client";
     private readonly TimeSpan _accessTokenLifetime = TimeSpan.FromMinutes(int.TryParse(configuration["Jwt:AccessTokenMinutes"], out var accessTokenMinutes) ? accessTokenMinutes : 30);
     private readonly TimeSpan _refreshTokenLifetime = TimeSpan.FromDays(int.TryParse(configuration["Jwt:RefreshTokenDays"], out var refreshTokenDays) ? refreshTokenDays : 14);
+    private readonly TimeSpan _loginTokenLifetime = TimeSpan.FromMinutes(10);
 
-    public async Task<AccessTokenResult> GenerateAccessTokenAsync(User user, CancellationToken cancellationToken = default)
+    public Task<AccessTokenResult> GenerateLoginTokenAsync(User user, CancellationToken cancellationToken = default)
+        => GenerateTokenAsync(user, null, _loginTokenLifetime, cancellationToken);
+
+    public Task<AccessTokenResult> GenerateAccessTokenAsync(User user, TenantMembership membership, CancellationToken cancellationToken = default)
+        => GenerateTokenAsync(user, membership, _accessTokenLifetime, cancellationToken);
+
+    private async Task<AccessTokenResult> GenerateTokenAsync(User user, TenantMembership? membership, TimeSpan lifetime, CancellationToken cancellationToken)
     {
         var now = clock.UtcNow;
-        var expires = now.Add(_accessTokenLifetime);
+        var expires = now.Add(lifetime);
         var key = await GetSigningKeyAsync(cancellationToken);
         var tokenId = Guid.NewGuid().ToString("N");
+        var claims = new List<Claim>
+        {
+            new(JwtRegisteredClaimNames.Sub, user.UserId),
+            new("userid", user.UserId),
+            new("email", user.Email),
+            new("platformrole", user.Role),
+            new("platformadmin", (user.Role == SystemRoles.PlatformAdmin).ToString().ToLowerInvariant()),
+            new("mustchangepassword", user.MustChangePassword.ToString().ToLowerInvariant()),
+            new(JwtRegisteredClaimNames.Jti, tokenId)
+        };
+
+        if (membership is not null)
+        {
+            claims.Add(new Claim(ClaimTypes.Role, membership.Role));
+            claims.Add(new Claim("role", membership.Role));
+            claims.Add(new Claim("tenantid", membership.TenantId));
+            claims.Add(new Claim("membershipid", membership.MembershipId));
+        }
+        else
+        {
+            claims.Add(new Claim("pretenant", "true"));
+        }
 
         var descriptor = new SecurityTokenDescriptor
         {
-            Subject = new ClaimsIdentity(
-            [
-                new(JwtRegisteredClaimNames.Sub, user.UserId),
-                new("userid", user.UserId),
-                new("email", user.Email),
-                new(ClaimTypes.Role, user.Role),
-                new("role", user.Role),
-                new("tenantid", user.TenantId),
-                new(JwtRegisteredClaimNames.Jti, tokenId)
-            ]),
+            Subject = new ClaimsIdentity(claims),
             Expires = expires.UtcDateTime,
             NotBefore = now.UtcDateTime,
             IssuedAt = now.UtcDateTime,

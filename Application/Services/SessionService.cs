@@ -9,16 +9,17 @@ public sealed class SessionService(
     IRefreshSessionRepository refreshSessionRepository,
     IRefreshTokenIndexRepository refreshTokenIndexRepository,
     IUserRepository userRepository,
+    ITenantMembershipRepository tenantMembershipRepository,
     ITokenService tokenService,
     IClock clock,
     ILogger<SessionService> logger) : ISessionService
 {
-    public async Task<RefreshSession> CreateSessionAsync(User user, RefreshTokenResult refreshToken, string? clientIp, string? userAgent, CancellationToken cancellationToken = default)
+    public async Task<RefreshSession> CreateSessionAsync(User user, string tenantId, RefreshTokenResult refreshToken, string? clientIp, string? userAgent, CancellationToken cancellationToken = default)
     {
         var session = new RefreshSession
         {
             SessionId = Guid.NewGuid().ToString("N"),
-            TenantId = user.TenantId,
+            TenantId = tenantId,
             UserId = user.UserId,
             RefreshTokenHash = refreshToken.TokenHash,
             IssuedAtUtc = clock.UtcNow,
@@ -28,7 +29,7 @@ public sealed class SessionService(
         };
 
         await refreshSessionRepository.AddAsync(session, cancellationToken);
-        await refreshTokenIndexRepository.AddAsync(user.TenantId, refreshToken.TokenHash, user.UserId, session.SessionId, cancellationToken);
+        await refreshTokenIndexRepository.AddAsync(tenantId, refreshToken.TokenHash, user.UserId, session.SessionId, cancellationToken);
         return session;
     }
 
@@ -47,8 +48,9 @@ public sealed class SessionService(
             return OperationResult<(RefreshSession, RefreshSession, RefreshTokenResult)>.Failure("invalid_refresh_token", "Refresh token is invalid.");
         }
 
-        var user = await userRepository.GetByIdAsync(tenantId, currentSession.UserId, cancellationToken);
-        if (user is null || !user.IsActive)
+        var user = await userRepository.GetByIdAsync(currentSession.UserId, cancellationToken);
+        var membership = await tenantMembershipRepository.GetAsync(tenantId, currentSession.UserId, cancellationToken);
+        if (user is null || membership is null || !user.IsActive || !membership.IsActive)
         {
             return OperationResult<(RefreshSession, RefreshSession, RefreshTokenResult)>.Failure("invalid_user", "User is not active.");
         }

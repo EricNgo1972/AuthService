@@ -14,12 +14,35 @@ public sealed class UserTableEntity : ITableEntity
     public string PasswordHash { get; set; } = string.Empty;
     public string Role { get; set; } = string.Empty;
     public bool IsActive { get; set; }
+    public bool MustChangePassword { get; set; }
     public int FailedLoginCount { get; set; }
     public DateTimeOffset? LockoutUntilUtc { get; set; }
     public DateTimeOffset PasswordChangedAtUtc { get; set; }
     public DateTimeOffset CreatedAtUtc { get; set; }
     public DateTimeOffset UpdatedAtUtc { get; set; }
     public DateTimeOffset? LastLoginAtUtc { get; set; }
+}
+
+public sealed class TenantTableEntity : ITableEntity
+{
+    public string PartitionKey { get; set; } = string.Empty;
+    public string RowKey { get; set; } = string.Empty;
+    public DateTimeOffset? Timestamp { get; set; }
+    public ETag ETag { get; set; }
+    public string Name { get; set; } = string.Empty;
+    public string NormalizedName { get; set; } = string.Empty;
+    public bool IsActive { get; set; }
+    public DateTimeOffset CreatedAtUtc { get; set; }
+    public DateTimeOffset UpdatedAtUtc { get; set; }
+}
+
+public sealed class TenantNameIndexEntity : ITableEntity
+{
+    public string PartitionKey { get; set; } = string.Empty;
+    public string RowKey { get; set; } = string.Empty;
+    public DateTimeOffset? Timestamp { get; set; }
+    public ETag ETag { get; set; }
+    public string TenantId { get; set; } = string.Empty;
 }
 
 public sealed class UserEmailIndexEntity : ITableEntity
@@ -29,6 +52,32 @@ public sealed class UserEmailIndexEntity : ITableEntity
     public DateTimeOffset? Timestamp { get; set; }
     public ETag ETag { get; set; }
     public string UserId { get; set; } = string.Empty;
+}
+
+public sealed class TenantMembershipEntity : ITableEntity
+{
+    public string PartitionKey { get; set; } = string.Empty;
+    public string RowKey { get; set; } = string.Empty;
+    public DateTimeOffset? Timestamp { get; set; }
+    public ETag ETag { get; set; }
+    public string MembershipId { get; set; } = string.Empty;
+    public string Role { get; set; } = string.Empty;
+    public bool IsActive { get; set; }
+    public DateTimeOffset CreatedAtUtc { get; set; }
+    public DateTimeOffset UpdatedAtUtc { get; set; }
+}
+
+public sealed class UserTenantIndexEntity : ITableEntity
+{
+    public string PartitionKey { get; set; } = string.Empty;
+    public string RowKey { get; set; } = string.Empty;
+    public DateTimeOffset? Timestamp { get; set; }
+    public ETag ETag { get; set; }
+    public string MembershipId { get; set; } = string.Empty;
+    public string Role { get; set; } = string.Empty;
+    public bool IsActive { get; set; }
+    public DateTimeOffset CreatedAtUtc { get; set; }
+    public DateTimeOffset UpdatedAtUtc { get; set; }
 }
 
 public sealed class RefreshSessionEntity : ITableEntity

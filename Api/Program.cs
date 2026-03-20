@@ -1,6 +1,7 @@
 using System.Security.Claims;
 using AuthService.Api.Endpoints;
 using AuthService.Infrastructure;
+using AuthService.Infrastructure.Security;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.OpenApi.Models;
 
@@ -44,16 +45,25 @@ builder.Services.AddSwaggerGen(options =>
 
 builder.Services.AddAuthorization(options =>
 {
-    options.AddPolicy("AdminOnly", policy => policy.RequireClaim(ClaimTypes.Role, "Admin"));
+    options.AddPolicy("PlatformAdminOnly", policy => policy.RequireClaim("platformadmin", "true"));
+    options.AddPolicy("TenantAdminOrPlatform", policy => policy.RequireAssertion(context =>
+        context.User.HasClaim("platformadmin", "true") ||
+        context.User.HasClaim(ClaimTypes.Role, "Admin")));
 });
 
-builder.Services.AddInfrastructure();
+builder.Services.AddInfrastructure(builder.Configuration);
 
 builder.Services
     .AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
     .AddJwtBearer();
 
 var app = builder.Build();
+
+using (var scope = app.Services.CreateScope())
+{
+    var initializer = scope.ServiceProvider.GetRequiredService<BootstrapAdminInitializer>();
+    await initializer.InitializeAsync();
+}
 
 app.UseSwagger();
 app.UseSwaggerUI(options =>
@@ -180,6 +190,15 @@ app.MapGet("/", () => Results.Content(
             <p>Minimal API authentication backend with JWT, refresh token rotation, Azure Table Storage, tenant isolation, and admin management endpoints.</p>
             <div class="grid">
                 <section class="panel">
+                    <h2>Bootstrap Admin</h2>
+                    <ul>
+                        <li>Tenant: <code>root</code></li>
+                        <li>Login: <code>admin</code></li>
+                        <li>Password: <code>admin</code></li>
+                        <li>Change the default password after first login for security.</li>
+                    </ul>
+                </section>
+                <section class="panel">
                     <h2>OpenAPI</h2>
                     <ul>
                         <li>Swagger UI: <a href="/swagger">/swagger</a></li>
@@ -223,5 +242,6 @@ app.MapGet("/", () => Results.Content(
 
 app.MapAuthEndpoints();
 app.MapAdminEndpoints();
+app.MapPlatformEndpoints();
 
 app.Run();

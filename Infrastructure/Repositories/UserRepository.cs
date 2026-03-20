@@ -7,12 +7,14 @@ namespace AuthService.Infrastructure.Repositories;
 
 public sealed class UserRepository(TableStorageContext storageContext) : IUserRepository
 {
-    public async Task<User?> GetByIdAsync(string tenantId, string userId, CancellationToken cancellationToken = default)
+    private const string PartitionKey = "USER";
+
+    public async Task<User?> GetByIdAsync(string userId, CancellationToken cancellationToken = default)
     {
         var table = await storageContext.GetTableAsync(TableNames.Users, cancellationToken);
         try
         {
-            var result = await table.GetEntityAsync<UserTableEntity>(tenantId, userId, cancellationToken: cancellationToken);
+            var result = await table.GetEntityAsync<UserTableEntity>(PartitionKey, userId, cancellationToken: cancellationToken);
             return Map(result.Value);
         }
         catch (RequestFailedException exception) when (exception.Status == 404)
@@ -35,13 +37,14 @@ public sealed class UserRepository(TableStorageContext storageContext) : IUserRe
 
     private static UserTableEntity Map(User user) => new()
     {
-        PartitionKey = user.TenantId,
+        PartitionKey = PartitionKey,
         RowKey = user.UserId,
         Email = user.Email,
         NormalizedEmail = user.NormalizedEmail,
         PasswordHash = user.PasswordHash,
         Role = user.Role,
         IsActive = user.IsActive,
+        MustChangePassword = user.MustChangePassword,
         FailedLoginCount = user.FailedLoginCount,
         LockoutUntilUtc = user.LockoutUntilUtc,
         PasswordChangedAtUtc = user.PasswordChangedAtUtc,
@@ -52,13 +55,14 @@ public sealed class UserRepository(TableStorageContext storageContext) : IUserRe
 
     private static User Map(UserTableEntity entity) => new()
     {
-        TenantId = entity.PartitionKey,
+        TenantId = string.Empty,
         UserId = entity.RowKey,
         Email = entity.Email,
         NormalizedEmail = entity.NormalizedEmail,
         PasswordHash = entity.PasswordHash,
         Role = entity.Role,
         IsActive = entity.IsActive,
+        MustChangePassword = entity.MustChangePassword,
         FailedLoginCount = entity.FailedLoginCount,
         LockoutUntilUtc = entity.LockoutUntilUtc,
         PasswordChangedAtUtc = entity.PasswordChangedAtUtc,

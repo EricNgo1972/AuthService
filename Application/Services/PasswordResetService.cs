@@ -13,7 +13,7 @@ public sealed class PasswordResetService(
 {
     public async Task<(bool Created, string? ResetToken, DateTimeOffset? ExpiresAtUtc)> CreateResetRequestAsync(string tenantId, string email, CancellationToken cancellationToken = default)
     {
-        var user = await identityService.GetByEmailAsync(tenantId, email, cancellationToken);
+        var user = await identityService.GetByEmailAsync(email, cancellationToken);
         if (user is null || !user.IsActive)
         {
             return (false, null, null);

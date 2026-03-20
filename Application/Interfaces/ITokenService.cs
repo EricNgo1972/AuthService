@@ -6,7 +6,8 @@ namespace AuthService.Application.Interfaces;
 
 public interface ITokenService
 {
-    Task<AccessTokenResult> GenerateAccessTokenAsync(User user, CancellationToken cancellationToken = default);
+    Task<AccessTokenResult> GenerateAccessTokenAsync(User user, TenantMembership membership, CancellationToken cancellationToken = default);
+    Task<AccessTokenResult> GenerateLoginTokenAsync(User user, CancellationToken cancellationToken = default);
     Task<RefreshTokenResult> GenerateRefreshTokenAsync(CancellationToken cancellationToken = default);
     Task<ClaimsPrincipal> ValidateJwtAsync(string token, CancellationToken cancellationToken = default);
     string HashOpaqueToken(string token);

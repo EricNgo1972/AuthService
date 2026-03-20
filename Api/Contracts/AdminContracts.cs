@@ -4,3 +4,4 @@ public sealed record CreateUserRequest(string Email, string Password, string Rol
 public sealed record ChangeRoleRequest(string Role);
 public sealed record ChangeStatusRequest(bool IsActive);
 public sealed record AdminResetPasswordResponse(string ResetToken, DateTimeOffset ExpiresAtUtc);
+public sealed record TenantUserResponse(UserResponse User, TenantAccessResponse Tenant);

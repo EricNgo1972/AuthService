@@ -9,7 +9,7 @@ public static class AdminEndpoints
 {
     public static IEndpointRouteBuilder MapAdminEndpoints(this IEndpointRouteBuilder app)
     {
-        var admin = app.MapGroup("/admin").RequireAuthorization("AdminOnly");
+        var admin = app.MapGroup("/admin").RequireAuthorization("TenantAdminOrPlatform");
         admin.MapPost("/users", CreateUserAsync);
         admin.MapGet("/users/{id}", GetUserAsync);
         admin.MapPatch("/users/{id}/role", ChangeRoleAsync);
@@ -18,69 +18,79 @@ public static class AdminEndpoints
         return app;
     }
 
-    private static async Task<IResult> CreateUserAsync(CreateUserRequest request, ClaimsPrincipal principal, IIdentityService identityService, IAuditService auditService, CancellationToken cancellationToken)
+    private static async Task<IResult> CreateUserAsync(CreateUserRequest request, ClaimsPrincipal principal, ITenantMembershipService membershipService, IIdentityService identityService, IAuditService auditService, CancellationToken cancellationToken)
     {
         var tenantId = principal.FindFirstValue("tenantid");
         if (string.IsNullOrWhiteSpace(tenantId))
         {
-            return Results.Unauthorized();
+            return Results.BadRequest(new MessageResponse("Current tenant context is required."));
         }
 
-        var result = await identityService.CreateUserAsync(tenantId, request.Email, request.Password, request.Role, request.IsActive, cancellationToken);
+        var result = await membershipService.AddUserToTenantAsync(tenantId, request.Email, request.Password, request.Role, request.IsActive, cancellationToken);
         await auditService.LogEventAsync(tenantId, principal.FindFirstValue("userid"), "admin_create_user", result.Succeeded ? "success" : "failure", null, null, result.ErrorMessage, cancellationToken);
-        return result.Succeeded && result.Value is not null
-            ? Results.Created($"/admin/users/{result.Value.UserId}", MapUser(result.Value))
-            : Results.BadRequest(new MessageResponse(result.ErrorMessage ?? "Create user failed."));
+        if (!result.Succeeded || result.Value is null)
+        {
+            return Results.BadRequest(new MessageResponse(result.ErrorMessage ?? "Create user failed."));
+        }
+
+        var user = await identityService.GetByIdAsync(result.Value.UserId, cancellationToken);
+        return user is null
+            ? Results.BadRequest(new MessageResponse("Create user failed."))
+            : Results.Created($"/admin/users/{user.UserId}", new TenantUserResponse(MapUser(user), new TenantAccessResponse(result.Value.TenantId, result.Value.TenantId, result.Value.Role, result.Value.IsActive)));
     }
 
-    private static async Task<IResult> GetUserAsync(string id, ClaimsPrincipal principal, IIdentityService identityService, CancellationToken cancellationToken)
+    private static async Task<IResult> GetUserAsync(string id, ClaimsPrincipal principal, ITenantMembershipService membershipService, IIdentityService identityService, CancellationToken cancellationToken)
     {
         var tenantId = principal.FindFirstValue("tenantid");
         if (string.IsNullOrWhiteSpace(tenantId))
         {
-            return Results.Unauthorized();
+            return Results.BadRequest(new MessageResponse("Current tenant context is required."));
         }
 
-        var user = await identityService.GetByIdAsync(tenantId, id, cancellationToken);
-        return user is null ? Results.NotFound() : Results.Ok(MapUser(user));
+        var membership = await membershipService.GetMembershipAsync(tenantId, id, cancellationToken);
+        var user = await identityService.GetByIdAsync(id, cancellationToken);
+        return !membership.Succeeded || membership.Value is null || user is null
+            ? Results.NotFound()
+            : Results.Ok(new TenantUserResponse(MapUser(user), new TenantAccessResponse(tenantId, tenantId, membership.Value.Role, membership.Value.IsActive)));
     }
 
-    private static async Task<IResult> ChangeRoleAsync(string id, ChangeRoleRequest request, ClaimsPrincipal principal, IIdentityService identityService, IAuditService auditService, CancellationToken cancellationToken)
+    private static async Task<IResult> ChangeRoleAsync(string id, ChangeRoleRequest request, ClaimsPrincipal principal, ITenantMembershipService membershipService, IAuditService auditService, CancellationToken cancellationToken)
     {
         var tenantId = principal.FindFirstValue("tenantid");
         if (string.IsNullOrWhiteSpace(tenantId))
         {
-            return Results.Unauthorized();
+            return Results.BadRequest(new MessageResponse("Current tenant context is required."));
         }
 
-        var result = await identityService.ChangeRoleAsync(tenantId, id, request.Role, cancellationToken);
+        var result = await membershipService.ChangeRoleAsync(tenantId, id, request.Role, cancellationToken);
         await auditService.LogEventAsync(tenantId, principal.FindFirstValue("userid"), "admin_change_role", result.Succeeded ? "success" : "failure", null, null, result.ErrorMessage, cancellationToken);
-        return result.Succeeded ? Results.Ok(new MessageResponse("Role updated.")) : Results.NotFound(new MessageResponse(result.ErrorMessage ?? "User not found."));
+        return result.Succeeded ? Results.Ok(new MessageResponse("Role updated.")) : Results.NotFound(new MessageResponse(result.ErrorMessage ?? "Membership not found."));
     }
 
-    private static async Task<IResult> ChangeStatusAsync(string id, ChangeStatusRequest request, ClaimsPrincipal principal, IIdentityService identityService, IAuditService auditService, CancellationToken cancellationToken)
+    private static async Task<IResult> ChangeStatusAsync(string id, ChangeStatusRequest request, ClaimsPrincipal principal, ITenantMembershipService membershipService, IAuditService auditService, CancellationToken cancellationToken)
     {
         var tenantId = principal.FindFirstValue("tenantid");
         if (string.IsNullOrWhiteSpace(tenantId))
         {
-            return Results.Unauthorized();
+            return Results.BadRequest(new MessageResponse("Current tenant context is required."));
         }
 
-        var result = await identityService.DisableUserAsync(tenantId, id, request.IsActive, cancellationToken);
+        var result = await membershipService.ChangeStatusAsync(tenantId, id, request.IsActive, cancellationToken);
         await auditService.LogEventAsync(tenantId, principal.FindFirstValue("userid"), "admin_change_status", result.Succeeded ? "success" : "failure", null, null, result.ErrorMessage, cancellationToken);
-        return result.Succeeded ? Results.Ok(new MessageResponse("Status updated.")) : Results.NotFound(new MessageResponse(result.ErrorMessage ?? "User not found."));
+        return result.Succeeded ? Results.Ok(new MessageResponse("Status updated.")) : Results.NotFound(new MessageResponse(result.ErrorMessage ?? "Membership not found."));
     }
 
-    private static async Task<IResult> CreateResetAsync(string id, ClaimsPrincipal principal, IIdentityService identityService, IPasswordResetService passwordResetService, IAuditService auditService, CancellationToken cancellationToken)
+    private static async Task<IResult> CreateResetAsync(string id, ClaimsPrincipal principal, ITenantMembershipService membershipService, IIdentityService identityService, IPasswordResetService passwordResetService, IAuditService auditService, CancellationToken cancellationToken)
     {
         var tenantId = principal.FindFirstValue("tenantid");
         if (string.IsNullOrWhiteSpace(tenantId))
         {
-            return Results.Unauthorized();
+            return Results.BadRequest(new MessageResponse("Current tenant context is required."));
         }
 
-        var user = await identityService.GetByIdAsync(tenantId, id, cancellationToken);
-        if (user is null)
+        var membership = await membershipService.GetMembershipAsync(tenantId, id, cancellationToken);
+        var user = await identityService.GetByIdAsync(id, cancellationToken);
+        if (!membership.Succeeded || membership.Value is null || user is null)
         {
             return Results.NotFound();
         }
@@ -93,5 +103,5 @@ public static class AdminEndpoints
     }
 
     private static UserResponse MapUser(User user)
-        => new(user.UserId, user.TenantId, user.Email, user.Role, user.IsActive, user.PasswordChangedAtUtc, user.CreatedAtUtc, user.UpdatedAtUtc, user.LastLoginAtUtc);
+        => new(user.UserId, user.Email, user.Role, user.IsActive, user.MustChangePassword, user.PasswordChangedAtUtc, user.CreatedAtUtc, user.UpdatedAtUtc, user.LastLoginAtUtc);
 }

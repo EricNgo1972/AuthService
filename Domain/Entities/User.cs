@@ -9,6 +9,7 @@ public sealed class User
     public string PasswordHash { get; set; } = string.Empty;
     public string Role { get; set; } = string.Empty;
     public bool IsActive { get; set; }
+    public bool MustChangePassword { get; set; }
     public int FailedLoginCount { get; set; }
     public DateTimeOffset? LockoutUntilUtc { get; set; }
     public DateTimeOffset PasswordChangedAtUtc { get; set; }
