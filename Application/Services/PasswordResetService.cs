@@ -11,12 +11,12 @@ public sealed class PasswordResetService(
     ITokenService tokenService,
     IClock clock) : IPasswordResetService
 {
-    public async Task<(bool Created, string? ResetToken, DateTimeOffset? ExpiresAtUtc)> CreateResetRequestAsync(string tenantId, string email, CancellationToken cancellationToken = default)
+    public async Task<(bool Created, string? ResetToken, DateTimeOffset? ExpiresAtUtc, User? User)> CreateResetRequestAsync(string tenantId, string email, CancellationToken cancellationToken = default)
     {
         var user = await identityService.GetByEmailAsync(email, cancellationToken);
         if (user is null || !user.IsActive)
         {
-            return (false, null, null);
+            return (false, null, null, null);
         }
 
         var token = await tokenService.GenerateRefreshTokenAsync(cancellationToken);
@@ -33,7 +33,7 @@ public sealed class PasswordResetService(
 
         await passwordResetRepository.AddAsync(request, cancellationToken);
         await passwordResetIndexRepository.AddAsync(tenantId, token.TokenHash, request.ResetRequestId, user.UserId, cancellationToken);
-        return (true, token.Token, request.ExpiresAtUtc);
+        return (true, token.Token, request.ExpiresAtUtc, user);
     }
 
     public async Task<OperationResult<PasswordResetRequest>> ValidateResetTokenAsync(string tenantId, string resetToken, CancellationToken cancellationToken = default)

@@ -16,6 +16,7 @@ public static class PlatformEndpoints
         platform.MapPatch("/tenants/{tenantId}", UpdateTenantAsync);
         platform.MapPatch("/tenants/{tenantId}/status", ChangeTenantStatusAsync);
         platform.MapPost("/tenants/{tenantId}/users", AddTenantUserAsync);
+        platform.MapGet("/tenants/{tenantId}/users", ListTenantUsersAsync);
         platform.MapGet("/tenants/{tenantId}/users/{userId}", GetTenantUserAsync);
         platform.MapPatch("/tenants/{tenantId}/users/{userId}/role", ChangeTenantUserRoleAsync);
         platform.MapPatch("/tenants/{tenantId}/users/{userId}/status", ChangeTenantUserStatusAsync);
@@ -64,6 +65,30 @@ public static class PlatformEndpoints
         return user is null
             ? Results.BadRequest(new MessageResponse("Create tenant user failed."))
             : Results.Created($"/platform/tenants/{tenantId}/users/{user.UserId}", new TenantUserResponse(MapUser(user), new TenantAccessResponse(tenantId, tenantId, result.Value.Role, result.Value.IsActive)));
+    }
+
+    private static async Task<IResult> ListTenantUsersAsync(string tenantId, ITenantMembershipService membershipService, IIdentityService identityService, ITenantService tenantService, CancellationToken cancellationToken)
+    {
+        var tenant = await tenantService.GetByIdAsync(tenantId, cancellationToken);
+        if (tenant is null)
+        {
+            return Results.NotFound();
+        }
+
+        var memberships = await membershipService.ListByTenantAsync(tenantId, cancellationToken);
+        var results = new List<TenantUserResponse>();
+        foreach (var membership in memberships)
+        {
+            var user = await identityService.GetByIdAsync(membership.UserId, cancellationToken);
+            if (user is not null)
+            {
+                results.Add(new TenantUserResponse(
+                    MapUser(user),
+                    new TenantAccessResponse(tenant.TenantId, tenant.Name, membership.Role, membership.IsActive)));
+            }
+        }
+
+        return Results.Ok(results);
     }
 
     private static async Task<IResult> GetTenantUserAsync(string tenantId, string userId, ITenantMembershipService membershipService, IIdentityService identityService, CancellationToken cancellationToken)

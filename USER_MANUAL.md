@@ -15,6 +15,15 @@ AuthService is a backend authentication API for:
 
 The API has no built-in business UI. Use Swagger or another API client.
 
+## Email Notifications
+
+The system emails users when:
+
+- a new account is created
+- an existing user is added to a tenant
+- a password is changed
+- a password reset is requested
+
 ## Accessing the API
 
 After the service starts:
@@ -296,6 +305,7 @@ This creates:
 - the tenant
 - the admin user if the email does not already exist
 - the admin membership for that tenant
+- an account-created or tenant-assigned email
 
 ### List Tenants
 

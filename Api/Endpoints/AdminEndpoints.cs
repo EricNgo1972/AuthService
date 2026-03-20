@@ -11,6 +11,7 @@ public static class AdminEndpoints
     {
         var admin = app.MapGroup("/admin").RequireAuthorization("TenantAdminOrPlatform");
         admin.MapPost("/users", CreateUserAsync);
+        admin.MapGet("/users", ListUsersAsync);
         admin.MapGet("/users/{id}", GetUserAsync);
         admin.MapPatch("/users/{id}/role", ChangeRoleAsync);
         admin.MapPatch("/users/{id}/status", ChangeStatusAsync);
@@ -37,6 +38,30 @@ public static class AdminEndpoints
         return user is null
             ? Results.BadRequest(new MessageResponse("Create user failed."))
             : Results.Created($"/admin/users/{user.UserId}", new TenantUserResponse(MapUser(user), new TenantAccessResponse(result.Value.TenantId, result.Value.TenantId, result.Value.Role, result.Value.IsActive)));
+    }
+
+    private static async Task<IResult> ListUsersAsync(ClaimsPrincipal principal, ITenantMembershipService membershipService, IIdentityService identityService, CancellationToken cancellationToken)
+    {
+        var tenantId = principal.FindFirstValue("tenantid");
+        if (string.IsNullOrWhiteSpace(tenantId))
+        {
+            return Results.BadRequest(new MessageResponse("Current tenant context is required."));
+        }
+
+        var memberships = await membershipService.ListByTenantAsync(tenantId, cancellationToken);
+        var results = new List<TenantUserResponse>();
+        foreach (var membership in memberships)
+        {
+            var user = await identityService.GetByIdAsync(membership.UserId, cancellationToken);
+            if (user is not null)
+            {
+                results.Add(new TenantUserResponse(
+                    MapUser(user),
+                    new TenantAccessResponse(tenantId, tenantId, membership.Role, membership.IsActive)));
+            }
+        }
+
+        return Results.Ok(results);
     }
 
     private static async Task<IResult> GetUserAsync(string id, ClaimsPrincipal principal, ITenantMembershipService membershipService, IIdentityService identityService, CancellationToken cancellationToken)
@@ -80,7 +105,7 @@ public static class AdminEndpoints
         return result.Succeeded ? Results.Ok(new MessageResponse("Status updated.")) : Results.NotFound(new MessageResponse(result.ErrorMessage ?? "Membership not found."));
     }
 
-    private static async Task<IResult> CreateResetAsync(string id, ClaimsPrincipal principal, ITenantMembershipService membershipService, IIdentityService identityService, IPasswordResetService passwordResetService, IAuditService auditService, CancellationToken cancellationToken)
+    private static async Task<IResult> CreateResetAsync(string id, ClaimsPrincipal principal, ITenantMembershipService membershipService, IIdentityService identityService, IPasswordResetService passwordResetService, ITenantService tenantService, INotificationService notificationService, IAuditService auditService, HttpContext httpContext, CancellationToken cancellationToken)
     {
         var tenantId = principal.FindFirstValue("tenantid");
         if (string.IsNullOrWhiteSpace(tenantId))
@@ -96,6 +121,13 @@ public static class AdminEndpoints
         }
 
         var reset = await passwordResetService.CreateResetRequestAsync(tenantId, user.Email, cancellationToken);
+        if (reset.Created && reset.ResetToken is not null && reset.ExpiresAtUtc.HasValue && reset.User is not null)
+        {
+            var tenant = await tenantService.GetByIdAsync(tenantId, cancellationToken);
+            var resetUrl = $"{httpContext.Request.Scheme}://{httpContext.Request.Host}/reset-password?tenantId={Uri.EscapeDataString(tenantId)}&token={Uri.EscapeDataString(reset.ResetToken)}";
+            await notificationService.SendPasswordResetAsync(reset.User, tenantId, tenant?.Name ?? tenantId, reset.ResetToken, resetUrl, reset.ExpiresAtUtc.Value, cancellationToken);
+        }
+
         await auditService.LogEventAsync(tenantId, principal.FindFirstValue("userid"), "admin_create_reset", reset.Created ? "success" : "failure", null, null, null, cancellationToken);
         return reset.Created && reset.ResetToken is not null && reset.ExpiresAtUtc.HasValue
             ? Results.Ok(new AdminResetPasswordResponse(reset.ResetToken, reset.ExpiresAtUtc.Value))

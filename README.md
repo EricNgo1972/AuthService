@@ -24,6 +24,7 @@ AuthService/
 - Platform admin and tenant admin permissions
 - Tenant CRUD and tenant-user management APIs
 - Login with automatic tenant selection when only one tenant is available
+- SendGrid email notifications for account creation, tenant assignment, password change, and password reset
 - Custom secret provider with environment-variable-first fallback
 - Swagger UI
 - Root health and API instructions page
@@ -39,6 +40,7 @@ Required values:
 
 - `JWT_SIGNING_KEY`
 - `STORAGE_CONNECTION_STRING`
+- `SENDGRID_API_KEY`
 
 Important app settings:
 
@@ -51,6 +53,8 @@ Important app settings:
 - `BootstrapAdmin:TenantId`
 - `BootstrapAdmin:Email`
 - `BootstrapAdmin:Password`
+- `Email:FromAddress`
+- `Email:FromName`
 
 Example environment variables:
 
@@ -202,6 +206,22 @@ Azure Table Storage tables:
   - `membershipid`
   - `jti`
 - Login token includes `pretenant=true` and is used only for tenant selection
+
+## Email Notifications
+
+The service sends emails for:
+
+- account created
+- tenant assigned
+- password changed
+- password reset
+
+Implementation details:
+
+- SendGrid API key resolves from environment first, then `appsettings.json`
+- Markdown email templates are embedded resources in `Infrastructure/Templates/Emails`
+- Password reset URLs are built from the runtime request host
+- Email delivery is best-effort and does not fail the main API request
 
 ## Notes
 

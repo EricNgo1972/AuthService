@@ -134,9 +134,16 @@ public static class AuthEndpoints
         return Results.Ok(new AuthResponse(accessToken.Token, rotation.Value.RefreshToken.Token, accessToken.ExpiresAtUtc, MapUser(user), new TenantAccessResponse(tenantInfo.Tenant.TenantId, tenantInfo.Tenant.Name, tenantInfo.Membership.Role, tenantInfo.Membership.IsActive)));
     }
 
-    private static async Task<IResult> ForgotPasswordAsync(ForgotPasswordRequest request, IPasswordResetService passwordResetService, IAuditService auditService, HttpContext httpContext, CancellationToken cancellationToken)
+    private static async Task<IResult> ForgotPasswordAsync(ForgotPasswordRequest request, IPasswordResetService passwordResetService, ITenantService tenantService, INotificationService notificationService, IAuditService auditService, HttpContext httpContext, CancellationToken cancellationToken)
     {
-        await passwordResetService.CreateResetRequestAsync(request.TenantId, request.Email, cancellationToken);
+        var reset = await passwordResetService.CreateResetRequestAsync(request.TenantId, request.Email, cancellationToken);
+        if (reset.Created && reset.ResetToken is not null && reset.ExpiresAtUtc.HasValue && reset.User is not null)
+        {
+            var tenant = await tenantService.GetByIdAsync(request.TenantId, cancellationToken);
+            var resetUrl = $"{httpContext.Request.Scheme}://{httpContext.Request.Host}/reset-password?tenantId={Uri.EscapeDataString(request.TenantId)}&token={Uri.EscapeDataString(reset.ResetToken)}";
+            await notificationService.SendPasswordResetAsync(reset.User, request.TenantId, tenant?.Name ?? request.TenantId, reset.ResetToken, resetUrl, reset.ExpiresAtUtc.Value, cancellationToken);
+        }
+
         await auditService.LogEventAsync(request.TenantId, null, "forgot_password", "success", httpContext.Connection.RemoteIpAddress?.ToString(), httpContext.Request.Headers.UserAgent.ToString(), null, cancellationToken);
         return Results.Ok(new MessageResponse("If the account exists, a reset request has been created."));
     }
@@ -209,7 +216,7 @@ public static class AuthEndpoints
         return Results.Ok(new MeResponse(MapUser(user), tenant));
     }
 
-    private static async Task<IResult> ChangePasswordAsync(ChangePasswordRequest request, ClaimsPrincipal principal, IIdentityService identityService, IPasswordService passwordService, ISessionService sessionService, IAuditService auditService, CancellationToken cancellationToken)
+    private static async Task<IResult> ChangePasswordAsync(ChangePasswordRequest request, ClaimsPrincipal principal, IIdentityService identityService, IPasswordService passwordService, ISessionService sessionService, ITenantService tenantService, INotificationService notificationService, IAuditService auditService, HttpContext httpContext, CancellationToken cancellationToken)
     {
         var tenantId = principal.FindFirstValue("tenantid") ?? "SYSTEM";
         var userId = principal.FindFirstValue("userid");
@@ -240,6 +247,14 @@ public static class AuthEndpoints
         var hash = await passwordService.HashPasswordAsync(request.NewPassword, cancellationToken);
         await identityService.UpdatePasswordAsync(user, hash, cancellationToken);
         await sessionService.RevokeAllSessionsAsync(user, cancellationToken);
+        var tenant = tenantId == "SYSTEM" ? null : await tenantService.GetByIdAsync(tenantId, cancellationToken);
+        await notificationService.SendPasswordChangedAsync(
+            user,
+            tenant?.Name,
+            httpContext.Connection.RemoteIpAddress?.ToString(),
+            httpContext.Request.Headers.UserAgent.ToString(),
+            DateTimeOffset.UtcNow,
+            cancellationToken);
         await auditService.LogEventAsync(tenantId, userId, "change_password", "success", null, null, null, cancellationToken);
         return Results.Ok(new MessageResponse("Password changed."));
     }

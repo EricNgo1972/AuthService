@@ -10,6 +10,7 @@ public sealed class TenantService(
     ITenantNameIndexRepository tenantNameIndexRepository,
     ITenantMembershipRepository tenantMembershipRepository,
     IIdentityService identityService,
+    INotificationService notificationService,
     IClock clock) : ITenantService
 {
     public async Task<OperationResult<(Tenant Tenant, User AdminUser, TenantMembership Membership)>> CreateTenantAsync(string tenantId, string name, string adminEmail, string adminPassword, CancellationToken cancellationToken = default)
@@ -39,9 +40,10 @@ public sealed class TenantService(
         };
 
         var existingUser = await identityService.GetByEmailAsync(adminEmail, cancellationToken);
-        OperationResult<User> userResult = existingUser is null
+        var isNewUser = existingUser is null;
+        OperationResult<User> userResult = isNewUser
             ? await identityService.CreateUserAsync(adminEmail, adminPassword, SystemRoles.User, true, false, cancellationToken)
-            : OperationResult<User>.Success(existingUser);
+            : OperationResult<User>.Success(existingUser!);
 
         if (!userResult.Succeeded || userResult.Value is null)
         {
@@ -62,6 +64,16 @@ public sealed class TenantService(
         await tenantRepository.AddAsync(tenant, cancellationToken);
         await tenantNameIndexRepository.AddAsync(normalizedName, tenant.TenantId, cancellationToken);
         await tenantMembershipRepository.AddAsync(membership, cancellationToken);
+
+        if (isNewUser)
+        {
+            await notificationService.SendAccountCreatedAsync(userResult.Value, tenant.Name, adminPassword, cancellationToken);
+        }
+        else
+        {
+            await notificationService.SendTenantAssignedAsync(userResult.Value, tenant.Name, membership.Role, cancellationToken);
+        }
+
         return OperationResult<(Tenant, User, TenantMembership)>.Success((tenant, userResult.Value, membership));
     }
 

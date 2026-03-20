@@ -64,6 +64,7 @@ Current tables include:
 - Access tokens are JWTs signed with `JWT_SIGNING_KEY`
 - Secrets resolve from environment variables first, then `appsettings.json`
 - Refresh tokens and reset tokens are stored as hashes only
+- SendGrid API key resolves from environment first, then config
 - `/auth/login` is global login by `email + password`
 - If the user has one active tenant membership, login auto-selects that tenant
 - If the user has multiple active tenant memberships, client must call `/auth/select-tenant`
@@ -86,6 +87,8 @@ Bootstrap user is created as:
 
 - `Api/appsettings.json`
 - `Api/appsettings.Development.json`
+
+Email templates are embedded Markdown resources under `Infrastructure/Templates/Emails`.
 
 Do not commit local-only secrets outside the intended development config pattern.
 

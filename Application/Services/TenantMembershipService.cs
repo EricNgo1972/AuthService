@@ -9,6 +9,7 @@ public sealed class TenantMembershipService(
     ITenantRepository tenantRepository,
     ITenantMembershipRepository tenantMembershipRepository,
     IIdentityService identityService,
+    INotificationService notificationService,
     IClock clock) : ITenantMembershipService
 {
     public async Task<IReadOnlyList<(Tenant Tenant, TenantMembership Membership)>> GetActiveMembershipsAsync(string userId, CancellationToken cancellationToken = default)
@@ -27,6 +28,9 @@ public sealed class TenantMembershipService(
         return active;
     }
 
+    public Task<IReadOnlyList<TenantMembership>> ListByTenantAsync(string tenantId, CancellationToken cancellationToken = default)
+        => tenantMembershipRepository.ListByTenantAsync(tenantId, cancellationToken);
+
     public async Task<OperationResult<TenantMembership>> GetMembershipAsync(string tenantId, string userId, CancellationToken cancellationToken = default)
     {
         var membership = await tenantMembershipRepository.GetAsync(tenantId, userId, cancellationToken);
@@ -44,6 +48,7 @@ public sealed class TenantMembershipService(
         }
 
         var existingUser = await identityService.GetByEmailAsync(email, cancellationToken);
+        var isNewUser = existingUser is null;
         User user;
         if (existingUser is null)
         {
@@ -78,6 +83,15 @@ public sealed class TenantMembershipService(
         };
 
         await tenantMembershipRepository.AddAsync(membership, cancellationToken);
+        if (isNewUser)
+        {
+            await notificationService.SendAccountCreatedAsync(user, tenant.Name, password, cancellationToken);
+        }
+        else
+        {
+            await notificationService.SendTenantAssignedAsync(user, tenant.Name, membership.Role, cancellationToken);
+        }
+
         return OperationResult<TenantMembership>.Success(membership);
     }
 

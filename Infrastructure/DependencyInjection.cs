@@ -1,5 +1,6 @@
 using AuthService.Application.Interfaces;
 using AuthService.Application.Services;
+using AuthService.Infrastructure.Email;
 using AuthService.Infrastructure.KeyVault;
 using AuthService.Infrastructure.Repositories;
 using AuthService.Infrastructure.Security;
@@ -16,6 +17,7 @@ public static class DependencyInjection
     public static IServiceCollection AddInfrastructure(this IServiceCollection services, IConfiguration configuration)
     {
         services.Configure<BootstrapAdminOptions>(configuration.GetSection("BootstrapAdmin"));
+        services.Configure<EmailOptions>(configuration.GetSection("Email"));
         services.AddSingleton<ISecretProvider, KeyVaultClient>();
         services.AddSingleton<IClock, SystemClock>();
         services.AddSingleton<TableStorageContext>();
@@ -36,6 +38,9 @@ public static class DependencyInjection
         services.AddScoped<IPasswordService, PasswordService>();
         services.AddScoped<ITokenService, TokenService>();
         services.AddScoped<IIdentityService, IdentityService>();
+        services.AddScoped<IEmailTemplateRenderer, EmbeddedEmailTemplateRenderer>();
+        services.AddScoped<IEmailService, SendGridEmailService>();
+        services.AddScoped<INotificationService, NotificationService>();
         services.AddScoped<ITenantService, TenantService>();
         services.AddScoped<ITenantMembershipService, TenantMembershipService>();
         services.AddScoped<ISessionService, SessionService>();
