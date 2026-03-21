@@ -1,0 +1,248 @@
+@page "/admin/users"
+@attribute [Authorize(Policy = "TenantAdminOrPlatform")]
+@inject AuthenticationStateProvider AuthenticationStateProvider
+@inject ITenantMembershipService TenantMembershipService
+@inject IIdentityService IdentityService
+@inject IPasswordResetService PasswordResetService
+@inject ITenantService TenantService
+@inject INotificationService NotificationService
+@inject NavigationManager NavigationManager
+
+<PageTitle>Tenant Users</PageTitle>
+
+<section class="page">
+    <div class="section-grid">
+        <div class="panel stack">
+            <p class="eyebrow">Create User</p>
+            <h1>@_tenantName users</h1>
+
+            @if (!string.IsNullOrWhiteSpace(_message))
+            {
+                <div class="alert @(_success ? "success" : "error")">@_message</div>
+            }
+
+            <EditForm Model="_createModel" OnValidSubmit="CreateUserAsync" class="stack">
+                <DataAnnotationsValidator />
+                <ValidationSummary />
+                <label class="field">
+                    <span>Display Name</span>
+                    <InputText @bind-Value="_createModel.DisplayName" />
+                </label>
+                <label class="field">
+                    <span>Email</span>
+                    <InputText @bind-Value="_createModel.Email" />
+                </label>
+                <label class="field">
+                    <span>Temporary Password</span>
+                    <InputText @bind-Value="_createModel.Password" type="password" />
+                </label>
+                <label class="field">
+                    <span>Role</span>
+                    <InputSelect @bind-Value="_createModel.Role">
+                        <option value="@SystemRoles.User">User</option>
+                        <option value="@SystemRoles.Admin">Admin</option>
+                    </InputSelect>
+                </label>
+                <label class="field">
+                    <span>Status</span>
+                    <InputSelect @bind-Value="_createModel.IsActive">
+                        <option value="true">Active</option>
+                        <option value="false">Inactive</option>
+                    </InputSelect>
+                </label>
+                <button class="button primary" type="submit" disabled="@_busy">Create user</button>
+            </EditForm>
+        </div>
+
+        <div class="table-shell">
+            <table>
+                <thead>
+                    <tr>
+                        <th>User</th>
+                        <th>Platform Role</th>
+                        <th>Tenant Role</th>
+                        <th>Status</th>
+                        <th>Actions</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @if (_rows.Count == 0)
+                    {
+                        <tr>
+                            <td colspan="5" class="empty-state muted">No users found for this tenant.</td>
+                        </tr>
+                    }
+                    else
+                    {
+                        @foreach (var row in _rows)
+                        {
+                            <tr>
+                                <td>
+                                    <strong>@row.DisplayName</strong>
+                                    <div class="muted">@row.Email</div>
+                                    <div class="muted">@row.UserId</div>
+                                </td>
+                                <td>@row.PlatformRole</td>
+                                <td>
+                                    <InputSelect @bind-Value="row.Role">
+                                        <option value="@SystemRoles.User">User</option>
+                                        <option value="@SystemRoles.Admin">Admin</option>
+                                    </InputSelect>
+                                </td>
+                                <td>
+                                    <span class="tag @(row.IsActive ? null : "inactive")">@(row.IsActive ? "Active" : "Inactive")</span>
+                                </td>
+                                <td>
+                                    <div class="row-actions">
+                                        <button class="secondary" @onclick="() => UpdateRoleAsync(row)">Save Role</button>
+                                        <button class="warning" @onclick="() => ToggleStatusAsync(row)">@(row.IsActive ? "Disable" : "Enable")</button>
+                                        <button class="danger" @onclick="() => SendResetAsync(row)">Send Reset</button>
+                                    </div>
+                                </td>
+                            </tr>
+                        }
+                    }
+                </tbody>
+            </table>
+        </div>
+    </div>
+</section>
+
+@code {
+    private readonly CreateUserModel _createModel = new();
+    private readonly List<TenantUserRow> _rows = [];
+    private string _tenantId = string.Empty;
+    private string _tenantName = "Tenant";
+    private bool _busy;
+    private bool _success;
+    private string? _message;
+
+    protected override async Task OnInitializedAsync()
+    {
+        var authState = await AuthenticationStateProvider.GetAuthenticationStateAsync();
+        var user = authState.User;
+        _tenantId = user.FindFirst("tenantid")?.Value ?? string.Empty;
+        _tenantName = user.FindFirst("tenantname")?.Value ?? _tenantId;
+        await LoadUsersAsync();
+    }
+
+    private async Task LoadUsersAsync()
+    {
+        _rows.Clear();
+        if (string.IsNullOrWhiteSpace(_tenantId))
+        {
+            return;
+        }
+
+        var memberships = await TenantMembershipService.ListByTenantAsync(_tenantId);
+        foreach (var membership in memberships)
+        {
+            var user = await IdentityService.GetByIdAsync(membership.UserId);
+            if (user is null)
+            {
+                continue;
+            }
+
+            _rows.Add(new TenantUserRow
+            {
+                UserId = user.UserId,
+                DisplayName = user.DisplayName,
+                Email = user.Email,
+                PlatformRole = user.Role,
+                Role = membership.Role,
+                IsActive = membership.IsActive
+            });
+        }
+    }
+
+    private async Task CreateUserAsync()
+    {
+        _busy = true;
+        _message = null;
+        _success = false;
+
+        try
+        {
+            var result = await TenantMembershipService.AddUserToTenantAsync(_tenantId, _createModel.DisplayName, _createModel.Email, _createModel.Password, _createModel.Role, _createModel.IsActive);
+            if (!result.Succeeded || result.Value is null)
+            {
+                _message = result.ErrorMessage ?? "Create user failed.";
+                return;
+            }
+
+            _success = true;
+            _message = "User created successfully.";
+            _createModel.DisplayName = string.Empty;
+            _createModel.Email = string.Empty;
+            _createModel.Password = string.Empty;
+            _createModel.Role = SystemRoles.User;
+            _createModel.IsActive = true;
+            await LoadUsersAsync();
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    private async Task UpdateRoleAsync(TenantUserRow row)
+    {
+        var result = await TenantMembershipService.ChangeRoleAsync(_tenantId, row.UserId, row.Role);
+        _success = result.Succeeded;
+        _message = result.Succeeded ? $"Updated role for {row.Email}." : result.ErrorMessage ?? "Role update failed.";
+        await LoadUsersAsync();
+    }
+
+    private async Task ToggleStatusAsync(TenantUserRow row)
+    {
+        var result = await TenantMembershipService.ChangeStatusAsync(_tenantId, row.UserId, !row.IsActive);
+        _success = result.Succeeded;
+        _message = result.Succeeded ? $"Updated status for {row.Email}." : result.ErrorMessage ?? "Status update failed.";
+        await LoadUsersAsync();
+    }
+
+    private async Task SendResetAsync(TenantUserRow row)
+    {
+        var reset = await PasswordResetService.CreateResetRequestAsync(_tenantId, row.Email);
+        if (reset.Created && reset.ResetToken is not null && reset.ExpiresAtUtc.HasValue && reset.User is not null)
+        {
+            var tenant = await TenantService.GetByIdAsync(_tenantId);
+            var resetUrl = $"{NavigationManager.BaseUri.TrimEnd('/')}/reset-password?tenantId={Uri.EscapeDataString(_tenantId)}&token={Uri.EscapeDataString(reset.ResetToken)}";
+            await NotificationService.SendPasswordResetAsync(reset.User, _tenantId, tenant?.Name ?? _tenantId, reset.ResetToken, resetUrl, reset.ExpiresAtUtc.Value);
+            _success = true;
+            _message = $"Password reset email sent to {row.Email}.";
+            return;
+        }
+
+        _success = false;
+        _message = "Password reset request failed.";
+    }
+
+    private sealed class CreateUserModel
+    {
+        [Required]
+        public string DisplayName { get; set; } = string.Empty;
+
+        [Required]
+        [EmailAddress]
+        public string Email { get; set; } = string.Empty;
+
+        [Required]
+        public string Password { get; set; } = string.Empty;
+
+        [Required]
+        public string Role { get; set; } = SystemRoles.User;
+
+        public bool IsActive { get; set; } = true;
+    }
+
+    private sealed class TenantUserRow
+    {
+        public string UserId { get; set; } = string.Empty;
+        public string DisplayName { get; set; } = string.Empty;
+        public string Email { get; set; } = string.Empty;
+        public string PlatformRole { get; set; } = SystemRoles.User;
+        public string Role { get; set; } = SystemRoles.User;
+        public bool IsActive { get; set; }
+    }
+}

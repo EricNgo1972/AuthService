@@ -1,0 +1,164 @@
+@page "/account"
+@attribute [Authorize]
+@inject AuthenticationStateProvider AuthenticationStateProvider
+@inject IIdentityService IdentityService
+@inject IPasswordService PasswordService
+@inject ISessionService SessionService
+@inject ITenantService TenantService
+@inject INotificationService NotificationService
+@inject IAuditService AuditService
+@inject IHttpContextAccessor HttpContextAccessor
+
+<PageTitle>Account</PageTitle>
+
+<section class="page">
+    <div class="section-grid">
+        <div class="panel stack">
+            <p class="eyebrow">Profile</p>
+            <h1>Current account</h1>
+            @if (_user is null)
+            {
+                <p class="muted">Loading account details...</p>
+            }
+            else
+            {
+                <div class="stack">
+                    <div>
+                        <strong>Display name</strong>
+                        <p class="muted">@_user.DisplayName</p>
+                    </div>
+                    <div>
+                        <strong>Email</strong>
+                        <p class="muted">@_user.Email</p>
+                    </div>
+                    <div>
+                        <strong>Platform role</strong>
+                        <p class="muted">@_user.Role</p>
+                    </div>
+                    <div>
+                        <strong>Current tenant</strong>
+                        <p class="muted">@_tenantName (@_tenantId)</p>
+                    </div>
+                    <div>
+                        <strong>Tenant role</strong>
+                        <p class="muted">@_tenantRole</p>
+                    </div>
+                    <div>
+                        <strong>Last login</strong>
+                        <p class="muted">@(_user.LastLoginAtUtc?.ToString("u") ?? "Unknown")</p>
+                    </div>
+                </div>
+            }
+        </div>
+
+        <div class="panel stack">
+            <p class="eyebrow">Security</p>
+            <h1>Change password</h1>
+
+            @if (!string.IsNullOrWhiteSpace(_message))
+            {
+                <div class="alert @(_success ? "success" : "error")">@_message</div>
+            }
+
+            <EditForm Model="_model" OnValidSubmit="HandleChangePasswordAsync" class="stack">
+                <DataAnnotationsValidator />
+                <ValidationSummary />
+                <label class="field">
+                    <span>Current password</span>
+                    <InputText @bind-Value="_model.CurrentPassword" type="password" />
+                </label>
+                <label class="field">
+                    <span>New password</span>
+                    <InputText @bind-Value="_model.NewPassword" type="password" />
+                </label>
+                <button class="button primary" type="submit" disabled="@_submitting">Change password</button>
+            </EditForm>
+        </div>
+    </div>
+</section>
+
+@code {
+    private readonly ChangePasswordModel _model = new();
+    private User? _user;
+    private string _userId = string.Empty;
+    private string _tenantId = "SYSTEM";
+    private string _tenantName = "Not selected";
+    private string _tenantRole = "User";
+    private string? _message;
+    private bool _success;
+    private bool _submitting;
+
+    protected override async Task OnInitializedAsync()
+    {
+        var authState = await AuthenticationStateProvider.GetAuthenticationStateAsync();
+        var principal = authState.User;
+        _userId = principal.FindFirst("userid")?.Value ?? string.Empty;
+        _tenantId = principal.FindFirst("tenantid")?.Value ?? "SYSTEM";
+        _tenantName = principal.FindFirst("tenantname")?.Value ?? _tenantId;
+        _tenantRole = principal.FindFirst("role")?.Value ?? "User";
+        if (!string.IsNullOrWhiteSpace(_userId))
+        {
+            _user = await IdentityService.GetByIdAsync(_userId);
+        }
+    }
+
+    private async Task HandleChangePasswordAsync()
+    {
+        _message = null;
+        _success = false;
+        _submitting = true;
+
+        try
+        {
+            if (_user is null)
+            {
+                _message = "User not found.";
+                return;
+            }
+
+            var verified = await PasswordService.VerifyPasswordAsync(_model.CurrentPassword, _user.PasswordHash);
+            if (!verified)
+            {
+                _message = "Invalid current password.";
+                return;
+            }
+
+            var policy = await PasswordService.ValidatePolicyAsync(_model.NewPassword);
+            if (!policy.Succeeded)
+            {
+                _message = policy.ErrorMessage ?? "Invalid password.";
+                return;
+            }
+
+            var hash = await PasswordService.HashPasswordAsync(_model.NewPassword);
+            await IdentityService.UpdatePasswordAsync(_user, hash);
+            await SessionService.RevokeAllSessionsAsync(_user);
+            var tenant = _tenantId == "SYSTEM" ? null : await TenantService.GetByIdAsync(_tenantId);
+            var httpContext = HttpContextAccessor.HttpContext;
+            await NotificationService.SendPasswordChangedAsync(
+                _user,
+                tenant?.Name ?? _tenantName,
+                httpContext?.Connection.RemoteIpAddress?.ToString(),
+                httpContext?.Request.Headers.UserAgent.ToString(),
+                DateTimeOffset.UtcNow);
+            await AuditService.LogEventAsync(_tenantId, _user.UserId, "change_password_ui", "success", null, null, null);
+            _success = true;
+            _message = "Password changed successfully.";
+            _model.CurrentPassword = string.Empty;
+            _model.NewPassword = string.Empty;
+        }
+        finally
+        {
+            _submitting = false;
+        }
+    }
+
+    private sealed class ChangePasswordModel
+    {
+        [Required]
+        public string CurrentPassword { get; set; } = string.Empty;
+
+        [Required]
+        public string NewPassword { get; set; } = string.Empty;
+    }
+}

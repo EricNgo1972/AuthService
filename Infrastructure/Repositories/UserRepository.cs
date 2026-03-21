@@ -39,6 +39,7 @@ public sealed class UserRepository(TableStorageContext storageContext) : IUserRe
     {
         PartitionKey = PartitionKey,
         RowKey = user.UserId,
+        DisplayName = user.DisplayName,
         Email = user.Email,
         NormalizedEmail = user.NormalizedEmail,
         PasswordHash = user.PasswordHash,
@@ -57,6 +58,7 @@ public sealed class UserRepository(TableStorageContext storageContext) : IUserRe
     {
         TenantId = string.Empty,
         UserId = entity.RowKey,
+        DisplayName = string.IsNullOrWhiteSpace(entity.DisplayName) ? entity.Email : entity.DisplayName,
         Email = entity.Email,
         NormalizedEmail = entity.NormalizedEmail,
         PasswordHash = entity.PasswordHash,

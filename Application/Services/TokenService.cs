@@ -39,6 +39,7 @@ public sealed class TokenService(
         {
             new(JwtRegisteredClaimNames.Sub, user.UserId),
             new("userid", user.UserId),
+            new("displayname", user.DisplayName),
             new("email", user.Email),
             new("platformrole", user.Role),
             new("platformadmin", (user.Role == SystemRoles.PlatformAdmin).ToString().ToLowerInvariant()),

@@ -260,5 +260,5 @@ public static class AuthEndpoints
     }
 
     private static UserResponse MapUser(User user)
-        => new(user.UserId, user.Email, user.Role, user.IsActive, user.MustChangePassword, user.PasswordChangedAtUtc, user.CreatedAtUtc, user.UpdatedAtUtc, user.LastLoginAtUtc);
+        => new(user.UserId, user.DisplayName, user.Email, user.Role, user.IsActive, user.MustChangePassword, user.PasswordChangedAtUtc, user.CreatedAtUtc, user.UpdatedAtUtc, user.LastLoginAtUtc);
 }

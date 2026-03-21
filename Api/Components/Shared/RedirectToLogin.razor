@@ -1,0 +1,33 @@
+@inject NavigationManager NavigationManager
+@inject AuthenticationStateProvider AuthenticationStateProvider
+
+<section class="page">
+    <div class="panel stack">
+        <p class="eyebrow">Redirecting</p>
+        <h1>Checking access</h1>
+        <p class="muted">The requested page requires authentication.</p>
+    </div>
+</section>
+
+@code {
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender)
+        {
+            return;
+        }
+
+        var authState = await AuthenticationStateProvider.GetAuthenticationStateAsync();
+        if (authState.User.Identity?.IsAuthenticated == true)
+        {
+            NavigationManager.NavigateTo("/", true);
+            return;
+        }
+
+        var returnUrl = NavigationManager.ToBaseRelativePath(NavigationManager.Uri);
+        var target = string.IsNullOrWhiteSpace(returnUrl)
+            ? "/login?returnUrl=%2Fmanage"
+            : $"/login?returnUrl={Uri.EscapeDataString("/" + returnUrl)}";
+        NavigationManager.NavigateTo(target, true);
+    }
+}

@@ -24,4 +24,7 @@ public sealed class AuditService(
 
         return auditRepository.AddAsync(auditEvent, cancellationToken);
     }
+
+    public Task<IReadOnlyList<AuditEvent>> GetLatestEventsAsync(string tenantId, int take, CancellationToken cancellationToken = default)
+        => auditRepository.ListLatestAsync(tenantId, take, cancellationToken);
 }

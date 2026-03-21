@@ -1,0 +1,202 @@
+@page "/platform/tenants"
+@attribute [Authorize(Policy = "PlatformAdminOnly")]
+@inject ITenantService TenantService
+
+<PageTitle>Tenants</PageTitle>
+
+<section class="page">
+    <div class="hero">
+        <div class="hero-copy stack">
+            <p class="eyebrow">Platform Management</p>
+            <h1>Tenant administration</h1>
+            <p class="muted">Manage tenants, provision tenant admins, and keep the platform admin account secured.</p>
+        </div>
+        <div class="actions">
+            <a class="button secondary" href="/account">Change platform admin password</a>
+            <a class="button secondary" href="/switch-tenant">Switch tenant</a>
+        </div>
+    </div>
+
+    <div class="section-grid">
+        <div class="panel stack">
+            <p class="eyebrow">Create Tenant</p>
+            <h1>Provision a tenant</h1>
+
+            @if (!string.IsNullOrWhiteSpace(_message))
+            {
+                <div class="alert @(_success ? "success" : "error")">@_message</div>
+            }
+
+            <EditForm Model="_createModel" OnValidSubmit="CreateTenantAsync" class="stack">
+                <DataAnnotationsValidator />
+                <ValidationSummary />
+                <label class="field">
+                    <span>Tenant Id</span>
+                    <InputText @bind-Value="_createModel.TenantId" />
+                </label>
+                <label class="field">
+                    <span>Name</span>
+                    <InputText @bind-Value="_createModel.Name" />
+                </label>
+                <label class="field">
+                    <span>Admin Display Name</span>
+                    <InputText @bind-Value="_createModel.AdminDisplayName" />
+                </label>
+                <label class="field">
+                    <span>Admin Email</span>
+                    <InputText @bind-Value="_createModel.AdminEmail" />
+                </label>
+                <label class="field">
+                    <span>Admin Password</span>
+                    <InputText @bind-Value="_createModel.AdminPassword" type="password" />
+                </label>
+                <button class="button primary" type="submit" disabled="@_busy">Create tenant</button>
+            </EditForm>
+        </div>
+
+        <div class="table-shell">
+            <table>
+                <thead>
+                    <tr>
+                        <th>Tenant</th>
+                        <th>Status</th>
+                        <th>Created</th>
+                        <th>Actions</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @if (_rows.Count == 0)
+                    {
+                        <tr>
+                            <td colspan="4" class="empty-state muted">No tenants found.</td>
+                        </tr>
+                    }
+                    else
+                    {
+                        @foreach (var row in _rows)
+                        {
+                            <tr>
+                                <td>
+                                    <div class="compact-form">
+                                        <strong>@row.TenantId</strong>
+                                        <InputText @bind-Value="row.Name" />
+                                    </div>
+                                </td>
+                                <td>
+                                    <span class="tag @(row.IsActive ? null : "inactive")">@(row.IsActive ? "Active" : "Inactive")</span>
+                                </td>
+                                <td class="muted">@row.CreatedAtUtc.ToString("u")</td>
+                                <td>
+                                    <div class="row-actions">
+                                        <button class="secondary" @onclick="() => SaveTenantAsync(row)">Save</button>
+                                        <button class="warning" @onclick="() => ToggleTenantAsync(row)">@(row.IsActive ? "Disable" : "Enable")</button>
+                                        <a class="button secondary" href="@($"/platform/tenants/{row.TenantId}/users")">Users</a>
+                                    </div>
+                                </td>
+                            </tr>
+                        }
+                    }
+                </tbody>
+            </table>
+        </div>
+    </div>
+</section>
+
+@code {
+    private readonly CreateTenantModel _createModel = new();
+    private readonly List<TenantRow> _rows = [];
+    private bool _busy;
+    private bool _success;
+    private string? _message;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadTenantsAsync();
+    }
+
+    private async Task LoadTenantsAsync()
+    {
+        _rows.Clear();
+        var tenants = await TenantService.ListAsync();
+        _rows.AddRange(tenants.Select(tenant => new TenantRow
+        {
+            TenantId = tenant.TenantId,
+            Name = tenant.Name,
+            IsActive = tenant.IsActive,
+            CreatedAtUtc = tenant.CreatedAtUtc
+        }));
+    }
+
+    private async Task CreateTenantAsync()
+    {
+        _busy = true;
+        _message = null;
+        _success = false;
+
+        try
+        {
+            var result = await TenantService.CreateTenantAsync(_createModel.TenantId, _createModel.Name, _createModel.AdminDisplayName, _createModel.AdminEmail, _createModel.AdminPassword);
+            if (!result.Succeeded)
+            {
+                _message = result.ErrorMessage ?? "Create tenant failed.";
+                return;
+            }
+
+            _success = true;
+            _message = $"Tenant {_createModel.TenantId} created successfully.";
+            _createModel.TenantId = string.Empty;
+            _createModel.Name = string.Empty;
+            _createModel.AdminDisplayName = string.Empty;
+            _createModel.AdminEmail = string.Empty;
+            _createModel.AdminPassword = string.Empty;
+            await LoadTenantsAsync();
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    private async Task SaveTenantAsync(TenantRow row)
+    {
+        var result = await TenantService.UpdateAsync(row.TenantId, row.Name);
+        _success = result.Succeeded;
+        _message = result.Succeeded ? $"Updated tenant {row.TenantId}." : result.ErrorMessage ?? "Update failed.";
+        await LoadTenantsAsync();
+    }
+
+    private async Task ToggleTenantAsync(TenantRow row)
+    {
+        var result = await TenantService.SetStatusAsync(row.TenantId, !row.IsActive);
+        _success = result.Succeeded;
+        _message = result.Succeeded ? $"Updated status for {row.TenantId}." : result.ErrorMessage ?? "Status update failed.";
+        await LoadTenantsAsync();
+    }
+
+    private sealed class CreateTenantModel
+    {
+        [Required]
+        public string TenantId { get; set; } = string.Empty;
+
+        [Required]
+        public string Name { get; set; } = string.Empty;
+
+        [Required]
+        public string AdminDisplayName { get; set; } = string.Empty;
+
+        [Required]
+        [EmailAddress]
+        public string AdminEmail { get; set; } = string.Empty;
+
+        [Required]
+        public string AdminPassword { get; set; } = string.Empty;
+    }
+
+    private sealed class TenantRow
+    {
+        public string TenantId { get; set; } = string.Empty;
+        public string Name { get; set; } = string.Empty;
+        public bool IsActive { get; set; }
+        public DateTimeOffset CreatedAtUtc { get; set; }
+    }
+}

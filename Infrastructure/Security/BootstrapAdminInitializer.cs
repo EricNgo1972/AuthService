@@ -39,7 +39,7 @@ public sealed class BootstrapAdminInitializer(
         var existingUser = await identityService.GetByEmailAsync(bootstrap.Email, cancellationToken);
         if (existingUser is null)
         {
-            var result = await identityService.CreateBootstrapAdminAsync(bootstrap.TenantId, bootstrap.Email, bootstrap.Password, cancellationToken);
+            var result = await identityService.CreateBootstrapAdminAsync(bootstrap.TenantId, "Platform Admin", bootstrap.Email, bootstrap.Password, cancellationToken);
             if (!result.Succeeded || result.Value is null)
             {
                 throw new InvalidOperationException(result.ErrorMessage ?? "Bootstrap admin initialization failed.");
