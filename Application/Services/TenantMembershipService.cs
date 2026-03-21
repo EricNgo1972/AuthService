@@ -39,7 +39,7 @@ public sealed class TenantMembershipService(
             : OperationResult<TenantMembership>.Success(membership);
     }
 
-    public async Task<OperationResult<TenantMembership>> AddUserToTenantAsync(string tenantId, string email, string password, string membershipRole, bool isActive, CancellationToken cancellationToken = default)
+    public async Task<OperationResult<TenantMembership>> AddUserToTenantAsync(string tenantId, string displayName, string email, string password, string membershipRole, bool isActive, CancellationToken cancellationToken = default)
     {
         var tenant = await tenantRepository.GetByIdAsync(tenantId, cancellationToken);
         if (tenant is null || !tenant.IsActive)
@@ -52,7 +52,7 @@ public sealed class TenantMembershipService(
         User user;
         if (existingUser is null)
         {
-            var userResult = await identityService.CreateUserAsync(email, password, SystemRoles.User, true, false, cancellationToken);
+            var userResult = await identityService.CreateUserAsync(displayName, email, password, SystemRoles.User, true, false, cancellationToken);
             if (!userResult.Succeeded || userResult.Value is null)
             {
                 return OperationResult<TenantMembership>.Failure(userResult.ErrorCode!, userResult.ErrorMessage!);

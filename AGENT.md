@@ -6,26 +6,27 @@ This file applies to the `AuthService` solution in this directory.
 
 ## Project Summary
 
-- .NET 8 Minimal API authentication service
+- .NET 8 single-host Blazor Server app plus `/api/*` integration API
 - Azure Table Storage only
 - Global user identities with tenant memberships
 - Platform admin and tenant admin authorization
-- JWT authentication with refresh token rotation
+- JWT authentication for API clients
+- Cookie authentication for the built-in Blazor UI
 - No ASP.NET Identity
 - No Entity Framework
 - No SQL database
 
 ## Solution Layout
 
-- `Api/`: startup, endpoint mappings, DTO contracts, Swagger
+- `Api/`: Blazor UI host, endpoint mappings, DTO contracts, Swagger, session endpoints
 - `Application/`: interfaces and business logic
 - `Domain/`: entities and enums
-- `Infrastructure/`: Azure Table repositories, secret provider, security plumbing
+- `Infrastructure/`: Azure Table repositories, secret provider, security plumbing, email
 - `Shared/`: shared models
 
 ## Core Model
 
-- `User` is now a global identity
+- `User` is a global identity and now includes `DisplayName`
 - `Tenant` is a separate entity
 - `TenantMembership` links users to tenants
 - `User.Role` is the global platform role
@@ -38,7 +39,7 @@ This file applies to the `AuthService` solution in this directory.
 - Prefer dependency injection for new behavior
 - Use async/await end to end
 - Keep endpoint handlers thin
-- Do not introduce table scans
+- Do not introduce table scans unless explicitly requested
 - Do not add ASP.NET Identity, EF Core, or SQL persistence
 
 ## Storage Rules
@@ -61,14 +62,28 @@ Current tables include:
 
 ## Authentication Notes
 
+- API routes are under `/api/*`
 - Access tokens are JWTs signed with `JWT_SIGNING_KEY`
+- UI sign-in uses cookie auth with the same application services
 - Secrets resolve from environment variables first, then `appsettings.json`
 - Refresh tokens and reset tokens are stored as hashes only
 - SendGrid API key resolves from environment first, then config
-- `/auth/login` is global login by `email + password`
+- `POST /api/auth/login` is global login by `email + password`
 - If the user has one active tenant membership, login auto-selects that tenant
-- If the user has multiple active tenant memberships, client must call `/auth/select-tenant`
-- `POST /auth/register` is disabled
+- If the user has multiple active tenant memberships, client must call `POST /api/auth/select-tenant`
+- UI users can switch tenant context through `/switch-tenant`
+- `POST /api/auth/register` is disabled
+
+## UI Notes
+
+- `/` is a public health and system dashboard page
+- `/manage` routes authenticated users by role:
+  - platform admin -> `/platform/tenants`
+  - tenant admin -> `/admin/users`
+  - regular user -> `/account`
+- `/platform/tenants` is the platform management dashboard
+- `/admin/users` is tenant-scoped user management
+- The UI is dark-mode-first with orange accent styling
 
 ## Bootstrap Admin
 
@@ -77,6 +92,7 @@ Bootstrap admin defaults to:
 - `TenantId = root`
 - `Email = admin`
 - `Password = admin`
+- `DisplayName = Platform Admin`
 
 Bootstrap user is created as:
 
@@ -108,10 +124,10 @@ Run from repo root:
 
 ## API Notes
 
-- Swagger UI is at `/swagger`
-- Root `/` serves a dark-mode health and API instructions page
-- `/admin/*` is current-tenant user management
-- `/platform/*` is platform admin tenant management
+- Swagger UI is at `/api/swagger`
+- Health endpoint is at `/api/health`
+- `/api/admin/*` is current-tenant user management
+- `/api/platform/*` is platform admin tenant management
 
 ## Documentation Rule
 
@@ -119,4 +135,5 @@ When changing behavior, keep these files aligned:
 
 - `README.md`
 - `USER_MANUAL.md`
+- `INTEGRATION_GUIDE.md`
 - `AGENT.md`

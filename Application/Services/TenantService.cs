@@ -13,7 +13,7 @@ public sealed class TenantService(
     INotificationService notificationService,
     IClock clock) : ITenantService
 {
-    public async Task<OperationResult<(Tenant Tenant, User AdminUser, TenantMembership Membership)>> CreateTenantAsync(string tenantId, string name, string adminEmail, string adminPassword, CancellationToken cancellationToken = default)
+    public async Task<OperationResult<(Tenant Tenant, User AdminUser, TenantMembership Membership)>> CreateTenantAsync(string tenantId, string name, string adminDisplayName, string adminEmail, string adminPassword, CancellationToken cancellationToken = default)
     {
         var normalizedName = name.Trim().ToUpperInvariant();
         var existingTenant = await tenantRepository.GetByIdAsync(tenantId, cancellationToken);
@@ -42,7 +42,7 @@ public sealed class TenantService(
         var existingUser = await identityService.GetByEmailAsync(adminEmail, cancellationToken);
         var isNewUser = existingUser is null;
         OperationResult<User> userResult = isNewUser
-            ? await identityService.CreateUserAsync(adminEmail, adminPassword, SystemRoles.User, true, false, cancellationToken)
+            ? await identityService.CreateUserAsync(adminDisplayName, adminEmail, adminPassword, SystemRoles.User, true, false, cancellationToken)
             : OperationResult<User>.Success(existingUser!);
 
         if (!userResult.Succeeded || userResult.Value is null)

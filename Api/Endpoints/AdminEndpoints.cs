@@ -27,7 +27,7 @@ public static class AdminEndpoints
             return Results.BadRequest(new MessageResponse("Current tenant context is required."));
         }
 
-        var result = await membershipService.AddUserToTenantAsync(tenantId, request.Email, request.Password, request.Role, request.IsActive, cancellationToken);
+        var result = await membershipService.AddUserToTenantAsync(tenantId, request.DisplayName, request.Email, request.Password, request.Role, request.IsActive, cancellationToken);
         await auditService.LogEventAsync(tenantId, principal.FindFirstValue("userid"), "admin_create_user", result.Succeeded ? "success" : "failure", null, null, result.ErrorMessage, cancellationToken);
         if (!result.Succeeded || result.Value is null)
         {
@@ -37,7 +37,7 @@ public static class AdminEndpoints
         var user = await identityService.GetByIdAsync(result.Value.UserId, cancellationToken);
         return user is null
             ? Results.BadRequest(new MessageResponse("Create user failed."))
-            : Results.Created($"/admin/users/{user.UserId}", new TenantUserResponse(MapUser(user), new TenantAccessResponse(result.Value.TenantId, result.Value.TenantId, result.Value.Role, result.Value.IsActive)));
+            : Results.Created($"/api/admin/users/{user.UserId}", new TenantUserResponse(MapUser(user), new TenantAccessResponse(result.Value.TenantId, result.Value.TenantId, result.Value.Role, result.Value.IsActive)));
     }
 
     private static async Task<IResult> ListUsersAsync(ClaimsPrincipal principal, ITenantMembershipService membershipService, IIdentityService identityService, CancellationToken cancellationToken)
@@ -135,5 +135,5 @@ public static class AdminEndpoints
     }
 
     private static UserResponse MapUser(User user)
-        => new(user.UserId, user.Email, user.Role, user.IsActive, user.MustChangePassword, user.PasswordChangedAtUtc, user.CreatedAtUtc, user.UpdatedAtUtc, user.LastLoginAtUtc);
+        => new(user.UserId, user.DisplayName, user.Email, user.Role, user.IsActive, user.MustChangePassword, user.PasswordChangedAtUtc, user.CreatedAtUtc, user.UpdatedAtUtc, user.LastLoginAtUtc);
 }

@@ -1,0 +1,348 @@
+:root {
+    color-scheme: dark;
+    --bg: #07111f;
+    --bg-alt: #0d1728;
+    --surface: rgba(12, 22, 39, 0.92);
+    --surface-strong: #111d33;
+    --surface-soft: #15233b;
+    --border: rgba(148, 163, 184, 0.18);
+    --text: #e5edf8;
+    --muted: #95a6bf;
+    --accent: #fb923c;
+    --accent-strong: #f97316;
+    --danger: #f87171;
+    --warning: #fbbf24;
+    --success: #22c55e;
+    --shadow: 0 24px 60px rgba(0, 0, 0, 0.35);
+    --radius: 20px;
+}
+
+* {
+    box-sizing: border-box;
+}
+
+html, body {
+    margin: 0;
+    min-height: 100%;
+    font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+    background:
+        radial-gradient(circle at top right, rgba(251, 146, 60, 0.13), transparent 24%),
+        radial-gradient(circle at top left, rgba(249, 115, 22, 0.12), transparent 18%),
+        linear-gradient(180deg, #040a14 0%, var(--bg) 100%);
+    color: var(--text);
+}
+
+a {
+    color: #fdba74;
+    text-decoration: none;
+}
+
+a:hover {
+    color: #fed7aa;
+}
+
+code {
+    background: rgba(251, 146, 60, 0.08);
+    border: 1px solid rgba(251, 146, 60, 0.14);
+    border-radius: 8px;
+    padding: 2px 6px;
+}
+
+.shell {
+    min-height: 100vh;
+    display: grid;
+    grid-template-columns: 280px minmax(0, 1fr);
+}
+
+.sidebar {
+    padding: 28px 22px;
+    border-right: 1px solid var(--border);
+    background: rgba(5, 12, 23, 0.88);
+    backdrop-filter: blur(12px);
+    display: flex;
+    flex-direction: column;
+    gap: 24px;
+}
+
+.page h1,
+.panel h2 {
+    margin: 0;
+}
+
+.page h1:focus,
+.page h2:focus,
+.panel h1:focus,
+.panel h2:focus {
+    outline: none;
+}
+
+.eyebrow {
+    margin: 0;
+    font-size: 0.74rem;
+    text-transform: uppercase;
+    letter-spacing: 0.18em;
+    color: var(--accent);
+}
+
+.muted {
+    color: var(--muted);
+}
+
+.nav-links {
+    display: grid;
+    gap: 8px;
+}
+
+.nav-links a {
+    display: block;
+    padding: 12px 14px;
+    border-radius: 12px;
+    color: var(--text);
+    border: 1px solid transparent;
+}
+
+.nav-links a.active,
+.nav-links a:hover {
+    border-color: rgba(251, 146, 60, 0.2);
+    background: rgba(251, 146, 60, 0.08);
+}
+
+.sidebar-footer {
+    margin-top: auto;
+    color: var(--muted);
+    font-size: 0.9rem;
+}
+
+.content {
+    padding: 28px;
+}
+
+.page {
+    display: grid;
+    gap: 22px;
+}
+
+.page.narrow {
+    max-width: 720px;
+    margin: 0 auto;
+}
+
+.panel,
+.hero,
+.tenant-card,
+.table-shell {
+    border: 1px solid var(--border);
+    background: var(--surface);
+    border-radius: var(--radius);
+    box-shadow: var(--shadow);
+}
+
+.panel,
+.hero {
+    padding: 24px;
+}
+
+.hero {
+    display: grid;
+    gap: 20px;
+    align-items: center;
+    grid-template-columns: minmax(0, 1fr) auto;
+}
+
+.stack {
+    display: grid;
+    gap: 14px;
+}
+
+.actions,
+.inline-links {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 12px;
+}
+
+.button,
+button,
+input,
+select {
+    font: inherit;
+}
+
+.button,
+button {
+    cursor: pointer;
+    border: 0;
+    border-radius: 12px;
+    padding: 12px 16px;
+    font-weight: 600;
+}
+
+.button.primary,
+button.primary {
+    background: linear-gradient(135deg, var(--accent), var(--accent-strong));
+    color: #04111c;
+}
+
+.button.secondary,
+button.secondary {
+    background: rgba(148, 163, 184, 0.12);
+    color: var(--text);
+    border: 1px solid var(--border);
+}
+
+button.warning {
+    background: rgba(251, 191, 36, 0.14);
+    color: #ffd66d;
+    border: 1px solid rgba(251, 191, 36, 0.24);
+}
+
+button.danger {
+    background: rgba(248, 113, 113, 0.14);
+    color: #fca5a5;
+    border: 1px solid rgba(248, 113, 113, 0.24);
+}
+
+button:disabled {
+    opacity: 0.65;
+    cursor: not-allowed;
+}
+
+.field {
+    display: grid;
+    gap: 8px;
+}
+
+input,
+select,
+textarea {
+    width: 100%;
+    border-radius: 12px;
+    border: 1px solid var(--border);
+    background: var(--surface-soft);
+    color: var(--text);
+    padding: 12px 14px;
+}
+
+input:focus,
+select:focus,
+textarea:focus {
+    outline: 2px solid rgba(251, 146, 60, 0.35);
+    border-color: rgba(251, 146, 60, 0.35);
+}
+
+.card-grid {
+    display: grid;
+    gap: 18px;
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+}
+
+.table-shell {
+    overflow: hidden;
+}
+
+table {
+    width: 100%;
+    border-collapse: collapse;
+}
+
+th,
+td {
+    padding: 14px 16px;
+    border-bottom: 1px solid rgba(148, 163, 184, 0.1);
+    text-align: left;
+    vertical-align: top;
+}
+
+tbody tr:hover {
+    background: rgba(251, 146, 60, 0.05);
+}
+
+.tag {
+    display: inline-flex;
+    align-items: center;
+    padding: 6px 10px;
+    border-radius: 999px;
+    background: rgba(251, 146, 60, 0.1);
+    color: #fed7aa;
+    border: 1px solid rgba(251, 146, 60, 0.16);
+}
+
+.tag.inactive {
+    background: rgba(248, 113, 113, 0.1);
+    color: #f8b4b4;
+    border-color: rgba(248, 113, 113, 0.16);
+}
+
+.alert {
+    padding: 14px 16px;
+    border-radius: 12px;
+    border: 1px solid transparent;
+}
+
+.alert.success {
+    color: #bbf7d0;
+    background: rgba(34, 197, 94, 0.12);
+    border-color: rgba(34, 197, 94, 0.2);
+}
+
+.alert.error {
+    color: #fecaca;
+    background: rgba(248, 113, 113, 0.12);
+    border-color: rgba(248, 113, 113, 0.2);
+}
+
+.alert.warning {
+    color: #fde68a;
+    background: rgba(251, 191, 36, 0.12);
+    border-color: rgba(251, 191, 36, 0.2);
+}
+
+.tenant-card {
+    padding: 18px 20px;
+    display: grid;
+    gap: 16px;
+    grid-template-columns: minmax(0, 1fr) auto auto;
+    align-items: center;
+}
+
+.section-grid {
+    display: grid;
+    gap: 22px;
+    grid-template-columns: 360px minmax(0, 1fr);
+}
+
+.row-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+}
+
+.compact-form {
+    display: grid;
+    gap: 10px;
+}
+
+.empty-state {
+    padding: 24px;
+}
+
+@media (max-width: 980px) {
+    .shell {
+        grid-template-columns: 1fr;
+    }
+
+    .sidebar {
+        border-right: 0;
+        border-bottom: 1px solid var(--border);
+    }
+
+    .hero,
+    .section-grid,
+    .tenant-card {
+        grid-template-columns: 1fr;
+    }
+
+    .content {
+        padding: 20px;
+    }
+}
