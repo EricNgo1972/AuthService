@@ -1,0 +1,156 @@
+@page "/platform/migration"
+@attribute [Authorize(Policy = "PlatformAdminOnly")]
+@inject IPhoebusMigrationService MigrationService
+@inject IAuditService AuditService
+@inject AuthenticationStateProvider AuthenticationStateProvider
+
+<PageTitle>Data Migration</PageTitle>
+
+<section class="page">
+    <div class="hero">
+        <div class="hero-copy stack">
+            <p class="eyebrow">Platform Management</p>
+            <h1>Phoebus migration</h1>
+            <p class="muted">Import users and tenants from the legacy Phoebus Azure Table account referenced by <code>PHOEBUS_AZ</code>. This tool is not exposed under <code>/api</code>.</p>
+        </div>
+        <div class="actions">
+            <a class="button secondary" href="/platform/tenants">Back to tenants</a>
+        </div>
+    </div>
+
+    <div class="section-grid">
+        <div class="panel stack">
+            <p class="eyebrow">Execution</p>
+            <h1>Run migration</h1>
+            <p class="muted">Preview performs a dry run against the current storage state. Execute creates missing tenants, users, and memberships.</p>
+
+            @if (!string.IsNullOrWhiteSpace(_message))
+            {
+                <div class="alert @(_success ? "success" : "error")">@_message</div>
+            }
+
+            @if (_busy)
+            {
+                <div class="activity-indicator" role="status" aria-live="polite">
+                    <span class="spinner" aria-hidden="true"></span>
+                    <div>
+                        <strong>@_busyTitle</strong>
+                        <div class="muted">@_busyMessage</div>
+                    </div>
+                </div>
+            }
+
+            <div class="row-actions">
+                <button class="secondary" @onclick="PreviewAsync" disabled="@_busy">Preview</button>
+                <button class="button primary" @onclick="ExecuteAsync" disabled="@_busy">Execute migration</button>
+            </div>
+        </div>
+
+        <div class="panel stack">
+            <p class="eyebrow">Source</p>
+            <h1>Legacy mapping</h1>
+            <div class="stack muted">
+                <p>Connection: <code>PHOEBUS_AZ</code></p>
+                <p>Table: <code>PBSBOAZUREUSERSSUBSCRIBER</code></p>
+                <p>Email: source <code>RowKey</code></p>
+                <p>Display name: source <code>Name</code></p>
+                <p>Tenant: source <code>RegCompany</code></p>
+                <p>Password: source <code>Password</code>, preserved as legacy hash until first successful login upgrades it.</p>
+            </div>
+        </div>
+    </div>
+
+    @if (_result is not null)
+    {
+        <div class="section-grid">
+            <div class="panel stack">
+                <p class="eyebrow">Summary</p>
+                <h1>@(_result.DryRun ? "Preview result" : "Execution result")</h1>
+                <div class="stack muted">
+                    <p>Source rows: @_result.SourceRows</p>
+                    <p>Imported tenants: @_result.ImportedTenants</p>
+                    <p>Imported users: @_result.ImportedUsers</p>
+                    <p>Imported memberships: @_result.ImportedMemberships</p>
+                    <p>Existing tenants: @_result.ExistingTenants</p>
+                    <p>Existing users: @_result.ExistingUsers</p>
+                    <p>Existing memberships: @_result.ExistingMemberships</p>
+                    <p>Skipped rows: @_result.SkippedRows</p>
+                    <p>Issues: @_result.ErrorCount</p>
+                </div>
+            </div>
+
+            <div class="panel stack">
+                <p class="eyebrow">Issues</p>
+                <h1>Notes</h1>
+                @if (_result.Issues.Count == 0)
+                {
+                    <p class="muted">No issues recorded.</p>
+                }
+                else
+                {
+                    <ul class="stack muted">
+                        @foreach (var issue in _result.Issues.Take(50))
+                        {
+                            <li>@issue</li>
+                        }
+                    </ul>
+                }
+            </div>
+        </div>
+    }
+</section>
+
+@code {
+    private bool _busy;
+    private bool _success;
+    private string? _message;
+    private string _busyTitle = "Working";
+    private string _busyMessage = "Checking the source table and current storage.";
+    private PhoebusMigrationResult? _result;
+
+    private Task PreviewAsync() => RunAsync(dryRun: true);
+
+    private Task ExecuteAsync() => RunAsync(dryRun: false);
+
+    private async Task RunAsync(bool dryRun)
+    {
+        _busy = true;
+        _message = null;
+        _success = false;
+        _busyTitle = dryRun ? "Preview in progress" : "Migration in progress";
+        _busyMessage = dryRun
+            ? "Reading the Phoebus source and calculating the changes to apply."
+            : "Importing tenants, users, and memberships from the Phoebus source table.";
+        await InvokeAsync(StateHasChanged);
+        await Task.Yield();
+
+        try
+        {
+            _result = await MigrationService.RunAsync(dryRun);
+            _success = _result.ErrorCount == 0;
+            _message = dryRun
+                ? $"Preview completed. {_result.SourceRows} source rows analyzed."
+                : $"Migration completed. {_result.ImportedTenants} tenants, {_result.ImportedUsers} users, and {_result.ImportedMemberships} memberships imported.";
+
+            var authState = await AuthenticationStateProvider.GetAuthenticationStateAsync();
+            var userId = authState.User.FindFirst("userid")?.Value;
+            await AuditService.LogEventAsync(
+                "SYSTEM",
+                userId,
+                dryRun ? "phoebus_migration_preview" : "phoebus_migration_execute",
+                _result.ErrorCount == 0 ? "success" : "warning",
+                null,
+                null,
+                $"rows={_result.SourceRows}; tenants={_result.ImportedTenants}; users={_result.ImportedUsers}; memberships={_result.ImportedMemberships}; skipped={_result.SkippedRows}; issues={_result.ErrorCount}");
+        }
+        catch (Exception exception)
+        {
+            _success = false;
+            _message = exception.Message;
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+}

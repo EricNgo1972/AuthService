@@ -35,12 +35,18 @@ public static class AuthEndpoints
             return Results.Unauthorized();
         }
 
-        var verified = await passwordService.VerifyPasswordAsync(request.Password, user.PasswordHash, cancellationToken);
-        if (!verified)
+        var verification = await passwordService.VerifyWithMetadataAsync(request.Password, user.PasswordHash, cancellationToken);
+        if (!verification.Succeeded)
         {
             await identityService.RecordLoginFailureAsync(user, cancellationToken);
             await auditService.LogEventAsync("SYSTEM", user.UserId, "login", "failure", ip, userAgent, "Invalid password.", cancellationToken);
             return Results.Unauthorized();
+        }
+
+        if (verification.NeedsRehash)
+        {
+            var upgradedHash = await passwordService.HashPasswordAsync(request.Password, cancellationToken);
+            await identityService.UpdatePasswordAsync(user, upgradedHash, cancellationToken);
         }
 
         await identityService.RecordLoginSuccessAsync(user, cancellationToken);
@@ -134,23 +140,29 @@ public static class AuthEndpoints
         return Results.Ok(new AuthResponse(accessToken.Token, rotation.Value.RefreshToken.Token, accessToken.ExpiresAtUtc, MapUser(user), new TenantAccessResponse(tenantInfo.Tenant.TenantId, tenantInfo.Tenant.Name, tenantInfo.Membership.Role, tenantInfo.Membership.IsActive)));
     }
 
-    private static async Task<IResult> ForgotPasswordAsync(ForgotPasswordRequest request, IPasswordResetService passwordResetService, ITenantService tenantService, INotificationService notificationService, IAuditService auditService, HttpContext httpContext, CancellationToken cancellationToken)
+    private static async Task<IResult> ForgotPasswordAsync(ForgotPasswordRequest request, IPasswordResetService passwordResetService, INotificationService notificationService, IAuditService auditService, ILoggerFactory loggerFactory, HttpContext httpContext, CancellationToken cancellationToken)
     {
-        var reset = await passwordResetService.CreateResetRequestAsync(request.TenantId, request.Email, cancellationToken);
+        var logger = loggerFactory.CreateLogger("AuthEndpoints.ForgotPassword");
+        logger.LogInformation("Forgot-password endpoint called for email {Email}", request.Email.Trim());
+        var reset = await passwordResetService.CreateResetRequestAsync(request.Email, cancellationToken);
         if (reset.Created && reset.ResetToken is not null && reset.ExpiresAtUtc.HasValue && reset.User is not null)
         {
-            var tenant = await tenantService.GetByIdAsync(request.TenantId, cancellationToken);
-            var resetUrl = $"{httpContext.Request.Scheme}://{httpContext.Request.Host}/reset-password?tenantId={Uri.EscapeDataString(request.TenantId)}&token={Uri.EscapeDataString(reset.ResetToken)}";
-            await notificationService.SendPasswordResetAsync(reset.User, request.TenantId, tenant?.Name ?? request.TenantId, reset.ResetToken, resetUrl, reset.ExpiresAtUtc.Value, cancellationToken);
+            var resetUrl = $"{httpContext.Request.Scheme}://{httpContext.Request.Host}/reset-password?token={Uri.EscapeDataString(reset.ResetToken)}";
+            await notificationService.SendPasswordResetAsync(reset.User, null, reset.ResetToken, resetUrl, reset.ExpiresAtUtc.Value, cancellationToken);
+            logger.LogInformation("Forgot-password endpoint created reset request for email {Email} with userId {UserId}", request.Email.Trim(), reset.User.UserId);
+        }
+        else
+        {
+            logger.LogWarning("Forgot-password endpoint did not create a reset request for email {Email}", request.Email.Trim());
         }
 
-        await auditService.LogEventAsync(request.TenantId, null, "forgot_password", "success", httpContext.Connection.RemoteIpAddress?.ToString(), httpContext.Request.Headers.UserAgent.ToString(), null, cancellationToken);
+        await auditService.LogEventAsync("SYSTEM", null, "forgot_password", "success", httpContext.Connection.RemoteIpAddress?.ToString(), httpContext.Request.Headers.UserAgent.ToString(), null, cancellationToken);
         return Results.Ok(new MessageResponse("If the account exists, a reset request has been created."));
     }
 
     private static async Task<IResult> ResetPasswordAsync(ResetPasswordRequest request, IPasswordResetService passwordResetService, IIdentityService identityService, IPasswordService passwordService, ISessionService sessionService, IAuditService auditService, CancellationToken cancellationToken)
     {
-        var resetRequest = await passwordResetService.ConsumeResetTokenAsync(request.TenantId, request.ResetToken, cancellationToken);
+        var resetRequest = await passwordResetService.ConsumeResetTokenAsync(request.ResetToken, cancellationToken);
         if (!resetRequest.Succeeded || resetRequest.Value is null)
         {
             return Results.BadRequest(new MessageResponse(resetRequest.ErrorMessage ?? "Reset failed."));
@@ -171,7 +183,7 @@ public static class AuthEndpoints
         var newHash = await passwordService.HashPasswordAsync(request.NewPassword, cancellationToken);
         await identityService.UpdatePasswordAsync(user, newHash, cancellationToken);
         await sessionService.RevokeAllSessionsAsync(user, cancellationToken);
-        await auditService.LogEventAsync(request.TenantId, user.UserId, "reset_password", "success", null, null, null, cancellationToken);
+        await auditService.LogEventAsync("SYSTEM", user.UserId, "reset_password", "success", null, null, null, cancellationToken);
         return Results.Ok(new MessageResponse("Password has been reset."));
     }
 

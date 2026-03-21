@@ -63,8 +63,9 @@ Open `/manage` to enter the management UI.
 
 - if not logged in, you are redirected to `/login`
 - if logged in as platform admin, you are redirected to `/platform/tenants`
-- if logged in as tenant admin, you are redirected to `/admin/users`
-- if logged in as a regular user, you are redirected to `/account`
+- if logged in with a tenant membership, you are redirected to `/admin/users`
+- tenant admins and platform admins can manage users there
+- regular tenant users can view the tenant user list there, but cannot create users or change roles or status
 
 ## Login
 
@@ -126,6 +127,23 @@ Features include:
 - assign an existing global user to current tenant
 - manage tenant user role and status
 - send password reset emails
+
+## Tenant User UI
+
+Regular tenant users can also use:
+
+- `/admin/users`
+
+Features include:
+
+- view users in the current tenant
+- view each user platform role, tenant role, and status
+
+Restrictions:
+
+- no `Create new user` action
+- no actions column
+- tenant role is read-only
 
 ## API Login Flow
 
@@ -219,7 +237,6 @@ Request a password reset:
 ```json
 POST /api/auth/forgot-password
 {
-  "tenantId": "tenant-a",
   "email": "user1@example.com"
 }
 ```
@@ -233,7 +250,6 @@ Use the reset token:
 ```json
 POST /api/auth/reset-password
 {
-  "tenantId": "tenant-a",
   "resetToken": "<resetToken>",
   "newPassword": "NewPassword1!"
 }

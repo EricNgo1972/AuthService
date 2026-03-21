@@ -2,6 +2,7 @@ using AuthService.Application.Interfaces;
 using AuthService.Application.Services;
 using AuthService.Infrastructure.Email;
 using AuthService.Infrastructure.KeyVault;
+using AuthService.Infrastructure.Migration;
 using AuthService.Infrastructure.Repositories;
 using AuthService.Infrastructure.Security;
 using AuthService.Infrastructure.Storage;
@@ -43,6 +44,7 @@ public static class DependencyInjection
         services.AddScoped<INotificationService, NotificationService>();
         services.AddScoped<ITenantService, TenantService>();
         services.AddScoped<ITenantMembershipService, TenantMembershipService>();
+        services.AddScoped<IPhoebusMigrationService, PhoebusMigrationService>();
         services.AddScoped<ISessionService, SessionService>();
         services.AddScoped<IPasswordResetService, PasswordResetService>();
         services.AddScoped<IAuditService, AuditService>();

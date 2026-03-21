@@ -5,7 +5,7 @@ namespace AuthService.Application.Interfaces;
 
 public interface IPasswordResetService
 {
-    Task<(bool Created, string? ResetToken, DateTimeOffset? ExpiresAtUtc, User? User)> CreateResetRequestAsync(string tenantId, string email, CancellationToken cancellationToken = default);
-    Task<OperationResult<PasswordResetRequest>> ValidateResetTokenAsync(string tenantId, string resetToken, CancellationToken cancellationToken = default);
-    Task<OperationResult<PasswordResetRequest>> ConsumeResetTokenAsync(string tenantId, string resetToken, CancellationToken cancellationToken = default);
+    Task<(bool Created, string? ResetToken, DateTimeOffset? ExpiresAtUtc, User? User)> CreateResetRequestAsync(string email, CancellationToken cancellationToken = default);
+    Task<OperationResult<PasswordResetRequest>> ValidateResetTokenAsync(string resetToken, CancellationToken cancellationToken = default);
+    Task<OperationResult<PasswordResetRequest>> ConsumeResetTokenAsync(string resetToken, CancellationToken cancellationToken = default);
 }

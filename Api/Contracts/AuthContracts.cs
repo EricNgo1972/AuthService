@@ -4,8 +4,8 @@ public sealed record RegisterRequest(string TenantId, string Email, string Passw
 public sealed record LoginRequest(string Email, string Password);
 public sealed record SelectTenantRequest(string LoginToken, string TenantId);
 public sealed record RefreshRequest(string TenantId, string RefreshToken);
-public sealed record ForgotPasswordRequest(string TenantId, string Email);
-public sealed record ResetPasswordRequest(string TenantId, string ResetToken, string NewPassword);
+public sealed record ForgotPasswordRequest(string Email);
+public sealed record ResetPasswordRequest(string ResetToken, string NewPassword);
 public sealed record LogoutRequest(string TenantId, string RefreshToken);
 public sealed record ChangePasswordRequest(string CurrentPassword, string NewPassword);
 

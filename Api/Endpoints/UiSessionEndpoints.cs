@@ -51,12 +51,18 @@ public static class UiSessionEndpoints
             return RedirectToLogin("Invalid email or password.", returnUrl);
         }
 
-        var verified = await passwordService.VerifyPasswordAsync(password, user.PasswordHash, cancellationToken);
-        if (!verified)
+        var verification = await passwordService.VerifyWithMetadataAsync(password, user.PasswordHash, cancellationToken);
+        if (!verification.Succeeded)
         {
             await identityService.RecordLoginFailureAsync(user, cancellationToken);
             await auditService.LogEventAsync("SYSTEM", user.UserId, "ui_login", "failure", ip, userAgent, "Invalid password.", cancellationToken);
             return RedirectToLogin("Invalid email or password.", returnUrl);
+        }
+
+        if (verification.NeedsRehash)
+        {
+            var upgradedHash = await passwordService.HashPasswordAsync(password, cancellationToken);
+            await identityService.UpdatePasswordAsync(user, upgradedHash, cancellationToken);
         }
 
         await identityService.RecordLoginSuccessAsync(user, cancellationToken);

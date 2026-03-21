@@ -1,13 +1,13 @@
-using System.Security.Claims;
 using AuthService.Api.Components;
 using AuthService.Api.Endpoints;
 using AuthService.Api.Security;
 using AuthService.Infrastructure;
 using AuthService.Infrastructure.Security;
-using Microsoft.AspNetCore.Authentication.Cookies;
+
 using Microsoft.AspNetCore.Authentication.JwtBearer;
-using Microsoft.Extensions.Hosting;
 using Microsoft.OpenApi.Models;
+
+using System.Security.Claims;
 
 const string UiCookieScheme = UiPrincipalFactory.SchemeName;
 const string CombinedScheme = "CombinedAuth";

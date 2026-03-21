@@ -7,6 +7,17 @@
 <PageTitle>AuthService</PageTitle>
 
 <section class="page">
+    @if (_loading)
+    {
+        <div class="activity-indicator page-loading" role="status" aria-live="polite">
+            <span class="spinner" aria-hidden="true"></span>
+            <div>
+                <strong>Loading dashboard</strong>
+                <div class="muted">Collecting service status, tenant counts, and recent events.</div>
+            </div>
+        </div>
+    }
+
     <div class="hero">
         <div class="hero-copy stack">
             <p class="eyebrow">API Status</p>
@@ -82,22 +93,30 @@
 @code {
     private readonly List<AuditEvent> _events = [];
     private bool _isAuthenticated;
+    private bool _loading = true;
     private DateTimeOffset _nowUtc;
     private int _tenantCount;
     private int _activeTenantCount;
 
     protected override async Task OnInitializedAsync()
     {
-        _nowUtc = DateTimeOffset.UtcNow;
-        var authState = await AuthenticationStateProvider.GetAuthenticationStateAsync();
-        _isAuthenticated = authState.User.Identity?.IsAuthenticated == true;
+        try
+        {
+            _nowUtc = DateTimeOffset.UtcNow;
+            var authState = await AuthenticationStateProvider.GetAuthenticationStateAsync();
+            _isAuthenticated = authState.User.Identity?.IsAuthenticated == true;
 
-        var tenants = await TenantService.ListAsync();
-        var visibleTenants = tenants.Where(x => !string.Equals(x.TenantId, "root", StringComparison.OrdinalIgnoreCase)).ToList();
-        _tenantCount = visibleTenants.Count;
-        _activeTenantCount = visibleTenants.Count(x => x.IsActive);
+            var tenants = await TenantService.ListAsync();
+            var visibleTenants = tenants.Where(x => !string.Equals(x.TenantId, "root", StringComparison.OrdinalIgnoreCase)).ToList();
+            _tenantCount = visibleTenants.Count;
+            _activeTenantCount = visibleTenants.Count(x => x.IsActive);
 
-        _events.Clear();
-        _events.AddRange(await AuditService.GetLatestEventsAsync("SYSTEM", 12));
+            _events.Clear();
+            _events.AddRange(await AuditService.GetLatestEventsAsync("SYSTEM", 12));
+        }
+        finally
+        {
+            _loading = false;
+        }
     }
 }

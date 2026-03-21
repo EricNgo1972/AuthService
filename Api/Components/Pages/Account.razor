@@ -12,54 +12,74 @@
 <PageTitle>Account</PageTitle>
 
 <section class="page">
-    <div class="section-grid">
-        <div class="panel stack">
-            <p class="eyebrow">Profile</p>
-            <h1>Current account</h1>
-            @if (_user is null)
-            {
-                <p class="muted">Loading account details...</p>
-            }
-            else
-            {
-                <div class="stack">
-                    <div>
-                        <strong>Display name</strong>
-                        <p class="muted">@_user.DisplayName</p>
-                    </div>
-                    <div>
-                        <strong>Email</strong>
-                        <p class="muted">@_user.Email</p>
-                    </div>
-                    <div>
-                        <strong>Platform role</strong>
-                        <p class="muted">@_user.Role</p>
-                    </div>
-                    <div>
-                        <strong>Current tenant</strong>
-                        <p class="muted">@_tenantName (@_tenantId)</p>
-                    </div>
-                    <div>
-                        <strong>Tenant role</strong>
-                        <p class="muted">@_tenantRole</p>
-                    </div>
-                    <div>
-                        <strong>Last login</strong>
-                        <p class="muted">@(_user.LastLoginAtUtc?.ToString("u") ?? "Unknown")</p>
-                    </div>
+    <div class="panel stack">
+        <p class="eyebrow">Profile</p>
+        <h1>Current account</h1>
+        @if (_user is null)
+        {
+            <div class="activity-indicator page-loading" role="status" aria-live="polite">
+                <span class="spinner" aria-hidden="true"></span>
+                <div>
+                    <strong>Loading account details</strong>
+                    <div class="muted">Retrieving your current profile and tenant context.</div>
                 </div>
-            }
+            </div>
+        }
+        else
+        {
+            <div class="stack">
+                <div>
+                    <strong>Display name</strong>
+                    <p class="muted">@_user.DisplayName</p>
+                </div>
+                <div>
+                    <strong>Email</strong>
+                    <p class="muted">@_user.Email</p>
+                </div>
+                <div>
+                    <strong>Platform role</strong>
+                    <p class="muted">@_user.Role</p>
+                </div>
+                <div>
+                    <strong>Current tenant</strong>
+                    <p class="muted">@_tenantName (@_tenantId)</p>
+                </div>
+                <div>
+                    <strong>Tenant role</strong>
+                    <p class="muted">@_tenantRole</p>
+                </div>
+                <div>
+                    <strong>Last login</strong>
+                    <p class="muted">@(_user.LastLoginAtUtc?.ToString("u") ?? "Unknown")</p>
+                </div>
+            </div>
+        }
+
+        @if (!string.IsNullOrWhiteSpace(_message))
+        {
+            <div class="alert @(_success ? "success" : "error")">@_message</div>
+        }
+
+        <div class="tenant-toolbar">
+            <button class="toolbar-button" @onclick="ToggleChangePasswordPanel">
+                <span class="toolbar-icon">*</span>
+                <span>@(_showChangePassword ? "Close" : "Change password")</span>
+            </button>
         </div>
 
-        <div class="panel stack">
-            <p class="eyebrow">Security</p>
-            <h1>Change password</h1>
+        @if (_submitting)
+        {
+            <div class="activity-indicator" role="status" aria-live="polite">
+                <span class="spinner" aria-hidden="true"></span>
+                <div>
+                    <strong>Changing password</strong>
+                    <div class="muted">Verifying your current password and updating account security.</div>
+                </div>
+            </div>
+        }
 
-            @if (!string.IsNullOrWhiteSpace(_message))
-            {
-                <div class="alert @(_success ? "success" : "error")">@_message</div>
-            }
-
+        @if (_showChangePassword)
+        {
             <EditForm Model="_model" OnValidSubmit="HandleChangePasswordAsync" class="stack">
                 <DataAnnotationsValidator />
                 <ValidationSummary />
@@ -71,9 +91,13 @@
                     <span>New password</span>
                     <InputText @bind-Value="_model.NewPassword" type="password" />
                 </label>
+                <label class="field">
+                    <span>Retype new password</span>
+                    <InputText @bind-Value="_model.ConfirmNewPassword" type="password" />
+                </label>
                 <button class="button primary" type="submit" disabled="@_submitting">Change password</button>
             </EditForm>
-        </div>
+        }
     </div>
 </section>
 
@@ -86,6 +110,7 @@
     private string _tenantRole = "User";
     private string? _message;
     private bool _success;
+    private bool _showChangePassword;
     private bool _submitting;
 
     protected override async Task OnInitializedAsync()
@@ -113,6 +138,12 @@
             if (_user is null)
             {
                 _message = "User not found.";
+                return;
+            }
+
+            if (!string.Equals(_model.NewPassword, _model.ConfirmNewPassword, StringComparison.Ordinal))
+            {
+                _message = "New password and retype password do not match.";
                 return;
             }
 
@@ -144,13 +175,20 @@
             await AuditService.LogEventAsync(_tenantId, _user.UserId, "change_password_ui", "success", null, null, null);
             _success = true;
             _message = "Password changed successfully.";
+            _showChangePassword = false;
             _model.CurrentPassword = string.Empty;
             _model.NewPassword = string.Empty;
+            _model.ConfirmNewPassword = string.Empty;
         }
         finally
         {
             _submitting = false;
         }
+    }
+
+    private void ToggleChangePasswordPanel()
+    {
+        _showChangePassword = !_showChangePassword;
     }
 
     private sealed class ChangePasswordModel
@@ -160,5 +198,8 @@
 
         [Required]
         public string NewPassword { get; set; } = string.Empty;
+
+        [Required]
+        public string ConfirmNewPassword { get; set; } = string.Empty;
     }
 }

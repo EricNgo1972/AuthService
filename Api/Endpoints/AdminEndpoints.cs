@@ -120,12 +120,12 @@ public static class AdminEndpoints
             return Results.NotFound();
         }
 
-        var reset = await passwordResetService.CreateResetRequestAsync(tenantId, user.Email, cancellationToken);
+        var reset = await passwordResetService.CreateResetRequestAsync(user.Email, cancellationToken);
         if (reset.Created && reset.ResetToken is not null && reset.ExpiresAtUtc.HasValue && reset.User is not null)
         {
             var tenant = await tenantService.GetByIdAsync(tenantId, cancellationToken);
-            var resetUrl = $"{httpContext.Request.Scheme}://{httpContext.Request.Host}/reset-password?tenantId={Uri.EscapeDataString(tenantId)}&token={Uri.EscapeDataString(reset.ResetToken)}";
-            await notificationService.SendPasswordResetAsync(reset.User, tenantId, tenant?.Name ?? tenantId, reset.ResetToken, resetUrl, reset.ExpiresAtUtc.Value, cancellationToken);
+            var resetUrl = $"{httpContext.Request.Scheme}://{httpContext.Request.Host}/reset-password?token={Uri.EscapeDataString(reset.ResetToken)}";
+            await notificationService.SendPasswordResetAsync(reset.User, tenant?.Name ?? tenantId, reset.ResetToken, resetUrl, reset.ExpiresAtUtc.Value, cancellationToken);
         }
 
         await auditService.LogEventAsync(tenantId, principal.FindFirstValue("userid"), "admin_create_reset", reset.Created ? "success" : "failure", null, null, null, cancellationToken);

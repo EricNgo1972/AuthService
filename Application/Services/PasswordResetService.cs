@@ -1,6 +1,7 @@
 using AuthService.Application.Interfaces;
 using AuthService.Domain.Entities;
 using AuthService.Shared.Models;
+using Microsoft.Extensions.Logging;
 
 namespace AuthService.Application.Services;
 
@@ -9,13 +10,24 @@ public sealed class PasswordResetService(
     IPasswordResetRepository passwordResetRepository,
     IPasswordResetIndexRepository passwordResetIndexRepository,
     ITokenService tokenService,
-    IClock clock) : IPasswordResetService
+    IClock clock,
+    ILogger<PasswordResetService> logger) : IPasswordResetService
 {
-    public async Task<(bool Created, string? ResetToken, DateTimeOffset? ExpiresAtUtc, User? User)> CreateResetRequestAsync(string tenantId, string email, CancellationToken cancellationToken = default)
+    private const string GlobalPartitionKey = "USER";
+
+    public async Task<(bool Created, string? ResetToken, DateTimeOffset? ExpiresAtUtc, User? User)> CreateResetRequestAsync(string email, CancellationToken cancellationToken = default)
     {
+        logger.LogInformation("Password reset request started for email {Email}", email.Trim());
         var user = await identityService.GetByEmailAsync(email, cancellationToken);
-        if (user is null || !user.IsActive)
+        if (user is null)
         {
+            logger.LogWarning("Password reset request could not find a global user for email {Email}", email.Trim());
+            return (false, null, null, null);
+        }
+
+        if (!user.IsActive)
+        {
+            logger.LogWarning("Password reset request found inactive user {UserId} for email {Email}", user.UserId, email.Trim());
             return (false, null, null, null);
         }
 
@@ -23,7 +35,7 @@ public sealed class PasswordResetService(
         var request = new PasswordResetRequest
         {
             ResetRequestId = Guid.NewGuid().ToString("N"),
-            TenantId = tenantId,
+            TenantId = "SYSTEM",
             UserId = user.UserId,
             NormalizedEmail = user.NormalizedEmail,
             ResetTokenHash = token.TokenHash,
@@ -31,21 +43,22 @@ public sealed class PasswordResetService(
             ExpiresAtUtc = clock.UtcNow.AddMinutes(20)
         };
 
-        await passwordResetRepository.AddAsync(request, cancellationToken);
-        await passwordResetIndexRepository.AddAsync(tenantId, token.TokenHash, request.ResetRequestId, user.UserId, cancellationToken);
+        await passwordResetRepository.AddAsync(MapToGlobalPartition(request), cancellationToken);
+        await passwordResetIndexRepository.AddAsync(GlobalPartitionKey, token.TokenHash, request.ResetRequestId, user.UserId, cancellationToken);
+        logger.LogInformation("Password reset request created for email {Email}: userId {UserId}, resetRequestId {ResetRequestId}, partition {PartitionKey}", email.Trim(), user.UserId, request.ResetRequestId, GlobalPartitionKey);
         return (true, token.Token, request.ExpiresAtUtc, user);
     }
 
-    public async Task<OperationResult<PasswordResetRequest>> ValidateResetTokenAsync(string tenantId, string resetToken, CancellationToken cancellationToken = default)
+    public async Task<OperationResult<PasswordResetRequest>> ValidateResetTokenAsync(string resetToken, CancellationToken cancellationToken = default)
     {
         var tokenHash = tokenService.HashOpaqueToken(resetToken);
-        var index = await passwordResetIndexRepository.GetAsync(tenantId, tokenHash, cancellationToken);
+        var index = await passwordResetIndexRepository.GetAsync(GlobalPartitionKey, tokenHash, cancellationToken);
         if (index is null)
         {
             return OperationResult<PasswordResetRequest>.Failure("invalid_reset_token", "Reset token is invalid.");
         }
 
-        var request = await passwordResetRepository.GetByIdAsync(tenantId, index.Value.ResetRequestId, cancellationToken);
+        var request = await passwordResetRepository.GetByIdAsync(GlobalPartitionKey, index.Value.ResetRequestId, cancellationToken);
         if (request is null || request.UserId != index.Value.UserId || request.IsRevoked || request.ConsumedAtUtc.HasValue || request.ExpiresAtUtc <= clock.UtcNow)
         {
             return OperationResult<PasswordResetRequest>.Failure("invalid_reset_token", "Reset token is invalid.");
@@ -54,17 +67,23 @@ public sealed class PasswordResetService(
         return OperationResult<PasswordResetRequest>.Success(request);
     }
 
-    public async Task<OperationResult<PasswordResetRequest>> ConsumeResetTokenAsync(string tenantId, string resetToken, CancellationToken cancellationToken = default)
+    public async Task<OperationResult<PasswordResetRequest>> ConsumeResetTokenAsync(string resetToken, CancellationToken cancellationToken = default)
     {
-        var validation = await ValidateResetTokenAsync(tenantId, resetToken, cancellationToken);
+        var validation = await ValidateResetTokenAsync(resetToken, cancellationToken);
         if (!validation.Succeeded || validation.Value is null)
         {
             return validation;
         }
 
         validation.Value.ConsumedAtUtc = clock.UtcNow;
-        await passwordResetRepository.UpdateAsync(validation.Value, cancellationToken);
-        await passwordResetIndexRepository.DeleteAsync(tenantId, validation.Value.ResetTokenHash, cancellationToken);
+        await passwordResetRepository.UpdateAsync(MapToGlobalPartition(validation.Value), cancellationToken);
+        await passwordResetIndexRepository.DeleteAsync(GlobalPartitionKey, validation.Value.ResetTokenHash, cancellationToken);
         return OperationResult<PasswordResetRequest>.Success(validation.Value);
+    }
+
+    private static PasswordResetRequest MapToGlobalPartition(PasswordResetRequest request)
+    {
+        request.TenantId = GlobalPartitionKey;
+        return request;
     }
 }

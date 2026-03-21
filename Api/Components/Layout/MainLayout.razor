@@ -4,11 +4,15 @@
 
 <div class="shell">
     <aside class="sidebar">
+        <div class="sidebar-title-block">
+            <div class="sidebar-title">SPC Tenants &amp; Users</div>
+        </div>
+
         <nav class="nav-links">
             <NavLink href="/" Match="NavLinkMatch.All">Home</NavLink>
-            <NavLink href="/manage">Manage</NavLink>
             <AuthorizeView>
                 <Authorized Context="auth">
+                    <NavLink href="/manage">Manage</NavLink>
                     <NavLink href="/account">Account</NavLink>
                     @if (_canSwitchTenant)
                     {
@@ -18,16 +22,12 @@
                     {
                         <NavLink href="/platform/tenants" Match="NavLinkMatch.Prefix">Tenants</NavLink>
                     }
-                    @if (auth.User.HasClaim("platformadmin", "true") || auth.User.IsInRole(SystemRoles.Admin))
+                    @if (auth.User.HasClaim("platformadmin", "true") || !string.IsNullOrWhiteSpace(auth.User.FindFirst("tenantid")?.Value))
                     {
                         <NavLink href="/admin/users" Match="NavLinkMatch.Prefix">Users</NavLink>
                     }
                     <a href="/session/logout">Logout</a>
                 </Authorized>
-                <NotAuthorized>
-                    <NavLink href="/login">Login</NavLink>
-                    <NavLink href="/forgot-password">Forgot Password</NavLink>
-                </NotAuthorized>
             </AuthorizeView>
         </nav>
 

@@ -51,7 +51,7 @@ public sealed class NotificationService(
             },
             cancellationToken);
 
-    public Task SendPasswordResetAsync(User user, string tenantId, string tenantName, string resetToken, string resetUrl, DateTimeOffset expiresAtUtc, CancellationToken cancellationToken = default)
+    public Task SendPasswordResetAsync(User user, string? tenantName, string resetToken, string resetUrl, DateTimeOffset expiresAtUtc, CancellationToken cancellationToken = default)
         => SendSafeAsync(
             user.Email,
             "PasswordReset",
@@ -59,8 +59,7 @@ public sealed class NotificationService(
             new Dictionary<string, string>
             {
                 ["UserEmail"] = user.Email,
-                ["TenantName"] = tenantName,
-                ["TenantId"] = tenantId,
+                ["TenantContext"] = string.IsNullOrWhiteSpace(tenantName) ? string.Empty : $" under the tenant {tenantName}",
                 ["ResetToken"] = resetToken,
                 ["ResetUrl"] = resetUrl,
                 ["ExpiresAtUtc"] = expiresAtUtc.ToString("u")

@@ -10,6 +10,13 @@
         <p class="eyebrow">Routing</p>
         <h1>Opening management console</h1>
         <p class="muted">Your session is being routed to the correct management area.</p>
+        <div class="activity-indicator page-loading" role="status" aria-live="polite">
+            <span class="spinner" aria-hidden="true"></span>
+            <div>
+                <strong>Routing your session</strong>
+                <div class="muted">Checking your access level and opening the correct page.</div>
+            </div>
+        </div>
     </div>
 </section>
 
@@ -35,7 +42,7 @@
             return;
         }
 
-        if (user.IsInRole(SystemRoles.Admin))
+        if (!string.IsNullOrWhiteSpace(user.FindFirst("tenantid")?.Value))
         {
             NavigationManager.NavigateTo("/admin/users", true);
             return;

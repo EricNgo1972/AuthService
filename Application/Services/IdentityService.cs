@@ -17,13 +17,23 @@ public sealed class IdentityService(
     public async Task<User?> GetByEmailAsync(string email, CancellationToken cancellationToken = default)
     {
         var normalizedEmail = email.Trim().ToUpperInvariant();
+        logger.LogInformation("Identity lookup started for email {Email} normalized as {NormalizedEmail}", email.Trim(), normalizedEmail);
         var userId = await userEmailIndexRepository.GetUserIdAsync(normalizedEmail, cancellationToken);
         if (string.IsNullOrWhiteSpace(userId))
         {
+            logger.LogWarning("Identity lookup failed for {NormalizedEmail}: UserEmailIndex entry was not found", normalizedEmail);
             return null;
         }
 
-        return await userRepository.GetByIdAsync(userId, cancellationToken);
+        var user = await userRepository.GetByIdAsync(userId, cancellationToken);
+        if (user is null)
+        {
+            logger.LogWarning("Identity lookup failed for {NormalizedEmail}: UserEmailIndex pointed to missing userId {UserId}", normalizedEmail, userId);
+            return null;
+        }
+
+        logger.LogInformation("Identity lookup succeeded for {NormalizedEmail}: userId {UserId}, isActive {IsActive}, platformRole {PlatformRole}", normalizedEmail, user.UserId, user.IsActive, user.Role);
+        return user;
     }
 
     public async Task<User?> GetByEmailAsync(string tenantId, string email, CancellationToken cancellationToken = default)

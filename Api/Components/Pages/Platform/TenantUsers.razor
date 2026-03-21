@@ -10,15 +10,59 @@
 <PageTitle>Tenant Users</PageTitle>
 
 <section class="page">
-    <div class="section-grid">
-        <div class="panel stack">
-            <p class="eyebrow">Tenant Users</p>
-            <h1>@_tenantName</h1>
+    <div class="hero">
+        <div class="hero-copy stack">
+            <p class="eyebrow">Platform Management</p>
+            <h1>@_tenantName users</h1>
+            <p class="muted">Manage users inside this tenant, assign roles, and send password reset links when needed.</p>
+        </div>
+        <div class="actions">
+            <span class="tag">Total users: @_rows.Count</span>
+        </div>
+    </div>
 
-            @if (!string.IsNullOrWhiteSpace(_message))
-            {
-                <div class="alert @(_success ? "success" : "error")">@_message</div>
-            }
+    <div class="tenant-toolbar">
+        <button class="toolbar-button" @onclick="ToggleCreatePanel">
+            <span class="toolbar-icon">+</span>
+            <span>@(_showCreatePanel ? "Close" : "Create new user")</span>
+        </button>
+        <a class="toolbar-button toolbar-button-subtle" href="/platform/tenants">
+            <span class="toolbar-icon">&lt;</span>
+            <span>Back to tenants</span>
+        </a>
+    </div>
+
+    @if (!string.IsNullOrWhiteSpace(_message))
+    {
+        <div class="alert @(_success ? "success" : "error")">@_message</div>
+    }
+
+    @if (_busy)
+    {
+        <div class="activity-indicator" role="status" aria-live="polite">
+            <span class="spinner" aria-hidden="true"></span>
+            <div>
+                <strong>@_busyTitle</strong>
+                <div class="muted">@_busyMessage</div>
+            </div>
+        </div>
+    }
+    else if (_loading)
+    {
+        <div class="activity-indicator page-loading" role="status" aria-live="polite">
+            <span class="spinner" aria-hidden="true"></span>
+            <div>
+                <strong>Loading users</strong>
+                <div class="muted">Retrieving the users assigned to this tenant.</div>
+            </div>
+        </div>
+    }
+
+    @if (_showCreatePanel)
+    {
+        <div class="panel stack">
+            <p class="eyebrow">Create User</p>
+            <h1>Add user to @_tenantName</h1>
 
             <EditForm Model="_createModel" OnValidSubmit="CreateUserAsync" class="stack">
                 <DataAnnotationsValidator />
@@ -42,61 +86,61 @@
                         <option value="@SystemRoles.Admin">Admin</option>
                     </InputSelect>
                 </label>
-                <button class="button primary" type="submit" disabled="@_busy">Add user to tenant</button>
+                <button class="button primary" type="submit" disabled="@_busy">Create user</button>
             </EditForm>
         </div>
+    }
 
-        <div class="table-shell">
-            <table>
-                <thead>
+    <div class="table-shell">
+        <table>
+            <thead>
+                <tr>
+                    <th>User</th>
+                    <th>Platform Role</th>
+                    <th>Tenant Role</th>
+                    <th>Status</th>
+                    <th>Actions</th>
+                </tr>
+            </thead>
+            <tbody>
+                @if (_rows.Count == 0)
+                {
                     <tr>
-                        <th>User</th>
-                        <th>Platform Role</th>
-                        <th>Tenant Role</th>
-                        <th>Status</th>
-                        <th>Actions</th>
+                        <td colspan="5" class="empty-state muted">No users found for this tenant.</td>
                     </tr>
-                </thead>
-                <tbody>
-                    @if (_rows.Count == 0)
+                }
+                else
+                {
+                    @foreach (var row in _rows)
                     {
                         <tr>
-                            <td colspan="5" class="empty-state muted">No users found for this tenant.</td>
+                            <td>
+                                <strong>@row.DisplayName</strong>
+                                <div class="muted">@row.Email</div>
+                                <div class="muted">@row.UserId</div>
+                            </td>
+                            <td>@row.PlatformRole</td>
+                            <td>
+                                <InputSelect @bind-Value="row.Role">
+                                    <option value="@SystemRoles.User">User</option>
+                                    <option value="@SystemRoles.Admin">Admin</option>
+                                </InputSelect>
+                            </td>
+                            <td>
+                                <span class="tag @(row.IsActive ? null : "inactive")">@(row.IsActive ? "Active" : "Inactive")</span>
+                            </td>
+                            <td>
+                                <div class="row-actions">
+                                    <button class="secondary" @onclick="() => UpdateRoleAsync(row)">Save Role</button>
+                                    <button class="warning" @onclick="() => ToggleStatusAsync(row)">@(row.IsActive ? "Disable" : "Enable")</button>
+                                    <button class="danger" @onclick="() => SendResetAsync(row)">Send Reset</button>
+                                </div>
+                            </td>
                         </tr>
                     }
-                    else
-                    {
-                        @foreach (var row in _rows)
-                        {
-                            <tr>
-                                <td>
-                                    <strong>@row.DisplayName</strong>
-                                    <div class="muted">@row.Email</div>
-                                    <div class="muted">@row.UserId</div>
-                                </td>
-                                <td>@row.PlatformRole</td>
-                                <td>
-                                    <InputSelect @bind-Value="row.Role">
-                                        <option value="@SystemRoles.User">User</option>
-                                        <option value="@SystemRoles.Admin">Admin</option>
-                                    </InputSelect>
-                                </td>
-                                <td>
-                                    <span class="tag @(row.IsActive ? null : "inactive")">@(row.IsActive ? "Active" : "Inactive")</span>
-                                </td>
-                                <td>
-                                    <div class="row-actions">
-                                        <button class="secondary" @onclick="() => UpdateRoleAsync(row)">Save Role</button>
-                                        <button class="warning" @onclick="() => ToggleStatusAsync(row)">@(row.IsActive ? "Disable" : "Enable")</button>
-                                        <button class="danger" @onclick="() => SendResetAsync(row)">Send Reset</button>
-                                    </div>
-                                </td>
-                            </tr>
-                        }
-                    }
-                </tbody>
-            </table>
-        </div>
+                }
+            </tbody>
+        </table>
     </div>
 </section>
 
@@ -108,8 +152,12 @@
     private readonly List<TenantUserRow> _rows = [];
     private string _tenantName = "Tenant";
     private bool _busy;
+    private bool _loading = true;
+    private bool _showCreatePanel;
     private bool _success;
     private string? _message;
+    private string _busyTitle = "Working";
+    private string _busyMessage = "Updating tenant users.";
 
     protected override async Task OnParametersSetAsync()
     {
@@ -120,25 +168,33 @@
 
     private async Task LoadUsersAsync()
     {
-        _rows.Clear();
-        var memberships = await TenantMembershipService.ListByTenantAsync(TenantId);
-        foreach (var membership in memberships)
+        _loading = true;
+        try
         {
-            var user = await IdentityService.GetByIdAsync(membership.UserId);
-            if (user is null)
+            _rows.Clear();
+            var memberships = await TenantMembershipService.ListByTenantAsync(TenantId);
+            foreach (var membership in memberships)
             {
-                continue;
-            }
+                var user = await IdentityService.GetByIdAsync(membership.UserId);
+                if (user is null)
+                {
+                    continue;
+                }
 
-            _rows.Add(new TenantUserRow
-            {
-                UserId = user.UserId,
-                DisplayName = user.DisplayName,
-                Email = user.Email,
-                PlatformRole = user.Role,
-                Role = membership.Role,
-                IsActive = membership.IsActive
-            });
+                _rows.Add(new TenantUserRow
+                {
+                    UserId = user.UserId,
+                    DisplayName = user.DisplayName,
+                    Email = user.Email,
+                    PlatformRole = user.Role,
+                    Role = membership.Role,
+                    IsActive = membership.IsActive
+                });
+            }
+        }
+        finally
+        {
+            _loading = false;
         }
     }
 
@@ -147,6 +203,10 @@
         _busy = true;
         _message = null;
         _success = false;
+        _busyTitle = "Creating user";
+        _busyMessage = "Provisioning the account and attaching it to this tenant.";
+        await InvokeAsync(StateHasChanged);
+        await Task.Yield();
 
         try
         {
@@ -163,6 +223,7 @@
             _createModel.Email = string.Empty;
             _createModel.Password = string.Empty;
             _createModel.Role = SystemRoles.User;
+            _showCreatePanel = false;
             await LoadUsersAsync();
         }
         finally
@@ -173,34 +234,75 @@
 
     private async Task UpdateRoleAsync(TenantUserRow row)
     {
-        var result = await TenantMembershipService.ChangeRoleAsync(TenantId, row.UserId, row.Role);
-        _success = result.Succeeded;
-        _message = result.Succeeded ? $"Updated role for {row.Email}." : result.ErrorMessage ?? "Role update failed.";
-        await LoadUsersAsync();
+        _busy = true;
+        _busyTitle = "Saving role";
+        _busyMessage = $"Updating the tenant role for {row.Email}.";
+        await InvokeAsync(StateHasChanged);
+        await Task.Yield();
+        try
+        {
+            var result = await TenantMembershipService.ChangeRoleAsync(TenantId, row.UserId, row.Role);
+            _success = result.Succeeded;
+            _message = result.Succeeded ? $"Updated role for {row.Email}." : result.ErrorMessage ?? "Role update failed.";
+            await LoadUsersAsync();
+        }
+        finally
+        {
+            _busy = false;
+        }
     }
 
     private async Task ToggleStatusAsync(TenantUserRow row)
     {
-        var result = await TenantMembershipService.ChangeStatusAsync(TenantId, row.UserId, !row.IsActive);
-        _success = result.Succeeded;
-        _message = result.Succeeded ? $"Updated status for {row.Email}." : result.ErrorMessage ?? "Status update failed.";
-        await LoadUsersAsync();
+        _busy = true;
+        _busyTitle = row.IsActive ? "Disabling user" : "Enabling user";
+        _busyMessage = $"Updating account access for {row.Email}.";
+        await InvokeAsync(StateHasChanged);
+        await Task.Yield();
+        try
+        {
+            var result = await TenantMembershipService.ChangeStatusAsync(TenantId, row.UserId, !row.IsActive);
+            _success = result.Succeeded;
+            _message = result.Succeeded ? $"Updated status for {row.Email}." : result.ErrorMessage ?? "Status update failed.";
+            await LoadUsersAsync();
+        }
+        finally
+        {
+            _busy = false;
+        }
     }
 
     private async Task SendResetAsync(TenantUserRow row)
     {
-        var reset = await PasswordResetService.CreateResetRequestAsync(TenantId, row.Email);
-        if (reset.Created && reset.ResetToken is not null && reset.ExpiresAtUtc.HasValue && reset.User is not null)
+        _busy = true;
+        _busyTitle = "Sending reset";
+        _busyMessage = $"Creating a reset request for {row.Email}.";
+        await InvokeAsync(StateHasChanged);
+        await Task.Yield();
+        try
         {
-            var resetUrl = $"{NavigationManager.BaseUri.TrimEnd('/')}/reset-password?tenantId={Uri.EscapeDataString(TenantId)}&token={Uri.EscapeDataString(reset.ResetToken)}";
-            await NotificationService.SendPasswordResetAsync(reset.User, TenantId, _tenantName, reset.ResetToken, resetUrl, reset.ExpiresAtUtc.Value);
-            _success = true;
-            _message = $"Password reset email sent to {row.Email}.";
-            return;
-        }
+            var reset = await PasswordResetService.CreateResetRequestAsync(row.Email);
+            if (reset.Created && reset.ResetToken is not null && reset.ExpiresAtUtc.HasValue && reset.User is not null)
+            {
+                var resetUrl = $"{NavigationManager.BaseUri.TrimEnd('/')}/reset-password?token={Uri.EscapeDataString(reset.ResetToken)}";
+                await NotificationService.SendPasswordResetAsync(reset.User, _tenantName, reset.ResetToken, resetUrl, reset.ExpiresAtUtc.Value);
+                _success = true;
+                _message = $"Password reset email sent to {row.Email}.";
+                return;
+            }
 
-        _success = false;
-        _message = "Password reset request failed.";
+            _success = false;
+            _message = "Password reset request failed.";
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    private void ToggleCreatePanel()
+    {
+        _showCreatePanel = !_showCreatePanel;
     }
 
     private sealed class CreateUserModel

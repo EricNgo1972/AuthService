@@ -4,7 +4,7 @@ Password Reset Request
 
 Hello,
 
-A request has been received to reset the password for {{UserEmail}} under the tenant {{TenantName}}.
+A request has been received to reset the password for {{UserEmail}}{{TenantContext}}.
 
 Reset Details:
 

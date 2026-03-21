@@ -16,7 +16,17 @@
             <div class="alert error">@Error</div>
         }
 
-        @if (_tenants.Count == 0)
+        @if (_loading)
+        {
+            <div class="activity-indicator page-loading" role="status" aria-live="polite">
+                <span class="spinner" aria-hidden="true"></span>
+                <div>
+                    <strong>Loading tenant options</strong>
+                    <div class="muted">Checking the tenants available to your account.</div>
+                </div>
+            </div>
+        }
+        else if (_tenants.Count == 0)
         {
             <div class="alert warning">No alternate tenant is available for this account.</div>
         }
@@ -49,23 +59,31 @@
     public string? ReturnUrl { get; set; }
 
     private readonly List<TenantOption> _tenants = [];
+    private bool _loading = true;
 
     protected override async Task OnInitializedAsync()
     {
-        var authState = await AuthenticationStateProvider.GetAuthenticationStateAsync();
-        var principal = authState.User;
-        var userId = principal.FindFirst("userid")?.Value;
-        var currentTenantId = principal.FindFirst("tenantid")?.Value;
-        ReturnUrl = NormalizeReturnUrl(ReturnUrl);
-        if (string.IsNullOrWhiteSpace(userId))
+        try
         {
-            return;
-        }
+            var authState = await AuthenticationStateProvider.GetAuthenticationStateAsync();
+            var principal = authState.User;
+            var userId = principal.FindFirst("userid")?.Value;
+            var currentTenantId = principal.FindFirst("tenantid")?.Value;
+            ReturnUrl = NormalizeReturnUrl(ReturnUrl);
+            if (string.IsNullOrWhiteSpace(userId))
+            {
+                return;
+            }
 
-        var memberships = await TenantMembershipService.GetActiveMembershipsAsync(userId);
-        _tenants.AddRange(memberships
-            .Where(x => !string.Equals(x.Tenant.TenantId, currentTenantId, StringComparison.OrdinalIgnoreCase))
-            .Select(x => new TenantOption(x.Tenant.TenantId, x.Tenant.Name, x.Membership.Role)));
+            var memberships = await TenantMembershipService.GetActiveMembershipsAsync(userId);
+            _tenants.AddRange(memberships
+                .Where(x => !string.Equals(x.Tenant.TenantId, currentTenantId, StringComparison.OrdinalIgnoreCase))
+                .Select(x => new TenantOption(x.Tenant.TenantId, x.Tenant.Name, x.Membership.Role)));
+        }
+        finally
+        {
+            _loading = false;
+        }
     }
 
     private static string NormalizeReturnUrl(string? value)

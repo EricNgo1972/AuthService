@@ -1,6 +1,7 @@
 @page "/platform/tenants"
 @attribute [Authorize(Policy = "PlatformAdminOnly")]
 @inject ITenantService TenantService
+@inject NavigationManager NavigationManager
 
 <PageTitle>Tenants</PageTitle>
 
@@ -9,23 +10,45 @@
         <div class="hero-copy stack">
             <p class="eyebrow">Platform Management</p>
             <h1>Tenant administration</h1>
-            <p class="muted">Manage tenants, provision tenant admins, and keep the platform admin account secured.</p>
+            <p class="muted">Manage tenants, provision tenant admins, and navigate into tenant user administration.</p>
         </div>
         <div class="actions">
-            <a class="button secondary" href="/account">Change platform admin password</a>
-            <a class="button secondary" href="/switch-tenant">Switch tenant</a>
+            <span class="tag">Total tenants: @_rows.Count</span>
         </div>
     </div>
 
-    <div class="section-grid">
+    <div class="tenant-toolbar">
+        <button class="toolbar-button" @onclick="ToggleCreatePanel">
+            <span class="toolbar-icon">+</span>
+            <span>@(_showCreatePanel ? "Close" : "Create new")</span>
+        </button>
+        <a class="toolbar-button toolbar-button-subtle" href="/platform/migration">
+            <span class="toolbar-icon">=</span>
+            <span>Data migration</span>
+        </a>
+    </div>
+
+    @if (!string.IsNullOrWhiteSpace(_message))
+    {
+        <div class="alert @(_success ? "success" : "error")">@_message</div>
+    }
+
+    @if (_loading)
+    {
+        <div class="activity-indicator page-loading" role="status" aria-live="polite">
+            <span class="spinner" aria-hidden="true"></span>
+            <div>
+                <strong>Loading tenants</strong>
+                <div class="muted">Retrieving the current tenant catalog.</div>
+            </div>
+        </div>
+    }
+
+    @if (_showCreatePanel)
+    {
         <div class="panel stack">
             <p class="eyebrow">Create Tenant</p>
             <h1>Provision a tenant</h1>
-
-            @if (!string.IsNullOrWhiteSpace(_message))
-            {
-                <div class="alert @(_success ? "success" : "error")">@_message</div>
-            }
 
             <EditForm Model="_createModel" OnValidSubmit="CreateTenantAsync" class="stack">
                 <DataAnnotationsValidator />
@@ -53,52 +76,51 @@
                 <button class="button primary" type="submit" disabled="@_busy">Create tenant</button>
             </EditForm>
         </div>
+    }
 
-        <div class="table-shell">
-            <table>
-                <thead>
+    <div class="table-shell">
+        <table>
+            <thead>
+                <tr>
+                    <th>Tenant</th>
+                    <th>Status</th>
+                    <th>Created</th>
+                    <th>Actions</th>
+                </tr>
+            </thead>
+            <tbody>
+                @if (_rows.Count == 0)
+                {
                     <tr>
-                        <th>Tenant</th>
-                        <th>Status</th>
-                        <th>Created</th>
-                        <th>Actions</th>
+                        <td colspan="4" class="empty-state muted">No tenants found.</td>
                     </tr>
-                </thead>
-                <tbody>
-                    @if (_rows.Count == 0)
+                }
+                else
+                {
+                    @foreach (var row in _rows)
                     {
-                        <tr>
-                            <td colspan="4" class="empty-state muted">No tenants found.</td>
+                        <tr class="tenant-row" @onclick="() => OpenTenantUsers(row.TenantId)">
+                            <td>
+                                <div class="compact-form clickable-cell">
+                                    <strong>@row.TenantId</strong>
+                                    <InputText @bind-Value="row.Name" />
+                                </div>
+                            </td>
+                            <td>
+                                <span class="tag @(row.IsActive ? null : "inactive")">@(row.IsActive ? "Active" : "Inactive")</span>
+                            </td>
+                            <td class="muted">@row.CreatedAtUtc.ToString("u")</td>
+                            <td>
+                                <div class="row-actions">
+                                    <button class="secondary" @onclick="() => SaveTenantAsync(row)" @onclick:stopPropagation="true">Save</button>
+                                    <button class="warning" @onclick="() => ToggleTenantAsync(row)" @onclick:stopPropagation="true">@(row.IsActive ? "Disable" : "Enable")</button>
+                                </div>
+                            </td>
                         </tr>
                     }
-                    else
-                    {
-                        @foreach (var row in _rows)
-                        {
-                            <tr>
-                                <td>
-                                    <div class="compact-form">
-                                        <strong>@row.TenantId</strong>
-                                        <InputText @bind-Value="row.Name" />
-                                    </div>
-                                </td>
-                                <td>
-                                    <span class="tag @(row.IsActive ? null : "inactive")">@(row.IsActive ? "Active" : "Inactive")</span>
-                                </td>
-                                <td class="muted">@row.CreatedAtUtc.ToString("u")</td>
-                                <td>
-                                    <div class="row-actions">
-                                        <button class="secondary" @onclick="() => SaveTenantAsync(row)">Save</button>
-                                        <button class="warning" @onclick="() => ToggleTenantAsync(row)">@(row.IsActive ? "Disable" : "Enable")</button>
-                                        <a class="button secondary" href="@($"/platform/tenants/{row.TenantId}/users")">Users</a>
-                                    </div>
-                                </td>
-                            </tr>
-                        }
-                    }
-                </tbody>
-            </table>
-        </div>
+                }
+            </tbody>
+        </table>
     </div>
 </section>
 
@@ -106,6 +128,8 @@
     private readonly CreateTenantModel _createModel = new();
     private readonly List<TenantRow> _rows = [];
     private bool _busy;
+    private bool _loading = true;
+    private bool _showCreatePanel;
     private bool _success;
     private string? _message;
 
@@ -116,15 +140,23 @@
 
     private async Task LoadTenantsAsync()
     {
-        _rows.Clear();
-        var tenants = await TenantService.ListAsync();
-        _rows.AddRange(tenants.Select(tenant => new TenantRow
+        _loading = true;
+        try
         {
-            TenantId = tenant.TenantId,
-            Name = tenant.Name,
-            IsActive = tenant.IsActive,
-            CreatedAtUtc = tenant.CreatedAtUtc
-        }));
+            _rows.Clear();
+            var tenants = await TenantService.ListAsync();
+            _rows.AddRange(tenants.Select(tenant => new TenantRow
+            {
+                TenantId = tenant.TenantId,
+                Name = tenant.Name,
+                IsActive = tenant.IsActive,
+                CreatedAtUtc = tenant.CreatedAtUtc
+            }));
+        }
+        finally
+        {
+            _loading = false;
+        }
     }
 
     private async Task CreateTenantAsync()
@@ -149,6 +181,7 @@
             _createModel.AdminDisplayName = string.Empty;
             _createModel.AdminEmail = string.Empty;
             _createModel.AdminPassword = string.Empty;
+            _showCreatePanel = false;
             await LoadTenantsAsync();
         }
         finally
@@ -171,6 +204,16 @@
         _success = result.Succeeded;
         _message = result.Succeeded ? $"Updated status for {row.TenantId}." : result.ErrorMessage ?? "Status update failed.";
         await LoadTenantsAsync();
+    }
+
+    private void ToggleCreatePanel()
+    {
+        _showCreatePanel = !_showCreatePanel;
+    }
+
+    private void OpenTenantUsers(string tenantId)
+    {
+        NavigationManager.NavigateTo($"/platform/tenants/{tenantId}/users");
     }
 
     private sealed class CreateTenantModel

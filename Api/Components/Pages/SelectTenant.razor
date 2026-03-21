@@ -21,6 +21,16 @@
         {
             <div class="alert error">@_loadError</div>
         }
+        else if (_loading)
+        {
+            <div class="activity-indicator page-loading" role="status" aria-live="polite">
+                <span class="spinner" aria-hidden="true"></span>
+                <div>
+                    <strong>Loading tenants</strong>
+                    <div class="muted">Finding the active tenants available to this account.</div>
+                </div>
+            </div>
+        }
         else if (_memberships.Count == 0)
         {
             <div class="alert warning">No active tenant memberships are available.</div>
@@ -62,18 +72,21 @@
     public string? ReturnUrl { get; set; }
 
     private readonly List<TenantOption> _memberships = [];
+    private bool _loading = true;
     private string? _loadError;
     private string NormalizedReturnUrl => string.IsNullOrWhiteSpace(ReturnUrl) ? "/" : ReturnUrl!;
 
     protected override async Task OnParametersSetAsync()
     {
         _memberships.Clear();
+        _loading = true;
         _loadError = null;
         ReturnUrl = NormalizeReturnUrl(ReturnUrl);
 
         if (string.IsNullOrWhiteSpace(Token))
         {
             _loadError = "Tenant selection token is missing.";
+            _loading = false;
             return;
         }
 
@@ -106,6 +119,10 @@
         catch
         {
             _loadError = "Tenant selection token is invalid or expired.";
+        }
+        finally
+        {
+            _loading = false;
         }
     }
 

@@ -14,6 +14,7 @@ Use this guide for:
 - forgot password
 - reset password
 - current-user lookup
+- tenant user listing access
 
 ## Base URL
 
@@ -224,6 +225,26 @@ GET /api/auth/me
 Authorization: Bearer <accessToken>
 ```
 
+## Tenant User Listing Access
+
+The tenant user list endpoint is:
+
+```http
+GET /api/admin/users
+Authorization: Bearer <accessToken>
+```
+
+Access rules:
+
+- any authenticated user with a tenant-scoped JWT can view the user list for the current tenant
+- tenant admins and platform admins can also manage tenant users through the admin endpoints
+- regular tenant users should treat `/api/admin/users` as read-only
+
+Client guidance:
+
+- show the tenant user directory to regular users if needed
+- only show create/update/status/reset actions when the JWT `role` claim is `Admin` or `platformadmin` is `true`
+
 ## Access Token Claims
 
 Tenant-scoped JWTs include:
@@ -246,6 +267,12 @@ Client apps should primarily rely on the API, but common client usage is:
 - `role` for tenant role
 - `platformadmin` for platform-level admin features
 - `displayname` for UI display only
+
+Admin capability guidance:
+
+- `role = Admin` means the caller is a tenant admin in the selected tenant
+- `platformadmin = true` means the caller is a platform admin
+- callers without either of those flags should use tenant-user endpoints in read-only mode
 
 ## Refresh Flow
 
