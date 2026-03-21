@@ -20,10 +20,10 @@ public sealed class PasswordService(IConfiguration configuration) : IPasswordSer
             return Task.FromResult(OperationResult.Failure("weak_password", "Password must be at least 8 characters."));
         }
 
-        if (!password.Any(char.IsUpper) || !password.Any(char.IsLower) || !password.Any(char.IsDigit) || password.All(char.IsLetterOrDigit))
-        {
-            return Task.FromResult(OperationResult.Failure("weak_password", "Password must include upper, lower, digit, and special characters."));
-        }
+        //if (!password.Any(char.IsUpper) || !password.Any(char.IsLower) || !password.Any(char.IsDigit) || password.All(char.IsLetterOrDigit))
+        //{
+        //    return Task.FromResult(OperationResult.Failure("weak_password", "Password must include upper, lower, digit, and special characters."));
+        //}
 
         return Task.FromResult(OperationResult.Success());
     }

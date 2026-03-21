@@ -17,17 +17,17 @@ public sealed class PasswordResetService(
 
     public async Task<(bool Created, string? ResetToken, DateTimeOffset? ExpiresAtUtc, User? User)> CreateResetRequestAsync(string email, CancellationToken cancellationToken = default)
     {
-        logger.LogInformation("Password reset request started for email {Email}", email.Trim());
+        //logger.LogInformation("Password reset request started for email {Email}", email.Trim());
         var user = await identityService.GetByEmailAsync(email, cancellationToken);
         if (user is null)
         {
-            logger.LogWarning("Password reset request could not find a global user for email {Email}", email.Trim());
+           // logger.LogWarning("Password reset request could not find a global user for email {Email}", email.Trim());
             return (false, null, null, null);
         }
 
         if (!user.IsActive)
         {
-            logger.LogWarning("Password reset request found inactive user {UserId} for email {Email}", user.UserId, email.Trim());
+            //logger.LogWarning("Password reset request found inactive user {UserId} for email {Email}", user.UserId, email.Trim());
             return (false, null, null, null);
         }
 
