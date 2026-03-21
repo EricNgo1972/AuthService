@@ -3,9 +3,13 @@ using AuthService.Api.Endpoints;
 using AuthService.Infrastructure;
 using AuthService.Infrastructure.Security;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.Extensions.Hosting;
 using Microsoft.OpenApi.Models;
 
 var builder = WebApplication.CreateBuilder(args);
+
+builder.Host.UseWindowsService();
+builder.Host.UseSystemd();
 
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen(options =>
