@@ -1,0 +1,112 @@
+name: Manual Release Package
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Version ID for the release package
+        required: true
+        type: string
+      target_os:
+        description: Release target
+        required: true
+        type: choice
+        options:
+          - windows
+          - linux
+
+permissions:
+  contents: write
+
+jobs:
+  release-package:
+    name: Create Release Package
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET 8
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+
+      - name: Resolve package settings
+        id: vars
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          VERSION="${{ inputs.version }}"
+          TARGET_OS="${{ inputs.target_os }}"
+
+          if [[ -z "$VERSION" ]]; then
+            echo "Version input is required." >&2
+            exit 1
+          fi
+
+          case "$TARGET_OS" in
+            windows)
+              echo "runtime=win-x64" >> "$GITHUB_OUTPUT"
+              echo "archive_name=AuthService-${VERSION}-windows.zip" >> "$GITHUB_OUTPUT"
+              echo "package_dir=release/AuthService-${VERSION}-windows" >> "$GITHUB_OUTPUT"
+              ;;
+            linux)
+              echo "runtime=linux-x64" >> "$GITHUB_OUTPUT"
+              echo "archive_name=AuthService-${VERSION}-linux.tar.gz" >> "$GITHUB_OUTPUT"
+              echo "package_dir=release/AuthService-${VERSION}-linux" >> "$GITHUB_OUTPUT"
+              ;;
+            *)
+              echo "Unsupported target_os: $TARGET_OS" >&2
+              exit 1
+              ;;
+          esac
+
+          echo "tag=v${VERSION}" >> "$GITHUB_OUTPUT"
+          echo "release_name=AuthService v${VERSION}" >> "$GITHUB_OUTPUT"
+
+      - name: Restore
+        run: dotnet restore AuthService.sln
+
+      - name: Publish
+        run: >
+          dotnet publish Api/Api.csproj
+          --configuration Release
+          --runtime ${{ steps.vars.outputs.runtime }}
+          --self-contained false
+          /p:Version=${{ inputs.version }}
+          --output ${{ steps.vars.outputs.package_dir }}
+
+      - name: Package Windows release
+        if: ${{ inputs.target_os == 'windows' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd release
+          zip -r "${{ steps.vars.outputs.archive_name }}" "$(basename "${{ steps.vars.outputs.package_dir }}")"
+
+      - name: Package Linux release
+        if: ${{ inputs.target_os == 'linux' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd release
+          tar -czf "${{ steps.vars.outputs.archive_name }}" "$(basename "${{ steps.vars.outputs.package_dir }}")"
+
+      - name: Create or update GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          TAG="${{ steps.vars.outputs.tag }}"
+          RELEASE_NAME="${{ steps.vars.outputs.release_name }}"
+          ASSET_PATH="release/${{ steps.vars.outputs.archive_name }}"
+
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release upload "$TAG" "$ASSET_PATH" --clobber
+          else
+            gh release create "$TAG" "$ASSET_PATH" --title "$RELEASE_NAME"
+          fi
