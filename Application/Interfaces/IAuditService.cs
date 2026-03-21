@@ -11,4 +11,9 @@ public interface IAuditService
         string? userAgent,
         string? details,
         CancellationToken cancellationToken = default);
+
+    Task<IReadOnlyList<Domain.Entities.AuditEvent>> GetLatestEventsAsync(
+        string tenantId,
+        int take,
+        CancellationToken cancellationToken = default);
 }

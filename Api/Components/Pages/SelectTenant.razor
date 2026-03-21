@@ -1,0 +1,123 @@
+@page "/select-tenant"
+@attribute [AllowAnonymous]
+@inject ITokenService TokenService
+@inject IIdentityService IdentityService
+@inject ITenantMembershipService TenantMembershipService
+
+<PageTitle>Select Tenant</PageTitle>
+
+<section class="page narrow">
+    <div class="panel stack">
+        <p class="eyebrow">Tenant Selection</p>
+        <h1>Select your tenant</h1>
+        <p class="muted">Your account belongs to multiple tenants. Choose the tenant context for this session.</p>
+
+        @if (!string.IsNullOrWhiteSpace(Error))
+        {
+            <div class="alert error">@Error</div>
+        }
+
+        @if (!string.IsNullOrWhiteSpace(_loadError))
+        {
+            <div class="alert error">@_loadError</div>
+        }
+        else if (_memberships.Count == 0)
+        {
+            <div class="alert warning">No active tenant memberships are available.</div>
+        }
+        else
+        {
+            <div class="stack">
+                @foreach (var membership in _memberships)
+                {
+                    <form method="post" action="/session/select-tenant" class="tenant-card">
+                        <input type="hidden" name="loginToken" value="@Token" />
+                        <input type="hidden" name="returnUrl" value="@NormalizedReturnUrl" />
+                        <input type="hidden" name="tenantId" value="@membership.TenantId" />
+                        <div>
+                            <h2>@membership.Name</h2>
+                            <p class="muted">@membership.TenantId</p>
+                        </div>
+                        <span class="tag">@membership.Role</span>
+                        <button class="button primary" type="submit">Continue</button>
+                    </form>
+                }
+            </div>
+        }
+
+        <div class="inline-links">
+            <a href="/login">Back to login</a>
+        </div>
+    </div>
+</section>
+
+@code {
+    [SupplyParameterFromQuery(Name = "token")]
+    public string? Token { get; set; }
+
+    [SupplyParameterFromQuery]
+    public string? Error { get; set; }
+
+    [SupplyParameterFromQuery]
+    public string? ReturnUrl { get; set; }
+
+    private readonly List<TenantOption> _memberships = [];
+    private string? _loadError;
+    private string NormalizedReturnUrl => string.IsNullOrWhiteSpace(ReturnUrl) ? "/" : ReturnUrl!;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        _memberships.Clear();
+        _loadError = null;
+        ReturnUrl = NormalizeReturnUrl(ReturnUrl);
+
+        if (string.IsNullOrWhiteSpace(Token))
+        {
+            _loadError = "Tenant selection token is missing.";
+            return;
+        }
+
+        try
+        {
+            var principal = await TokenService.ValidateJwtAsync(Token);
+            if (!string.Equals(principal.FindFirst("pretenant")?.Value, "true", StringComparison.OrdinalIgnoreCase))
+            {
+                _loadError = "Tenant selection token is invalid or expired.";
+                return;
+            }
+
+            var userId = principal.FindFirst("userid")?.Value;
+            if (string.IsNullOrWhiteSpace(userId))
+            {
+                _loadError = "Tenant selection token is invalid or expired.";
+                return;
+            }
+
+            var user = await IdentityService.GetByIdAsync(userId);
+            if (user is null)
+            {
+                _loadError = "Account could not be found.";
+                return;
+            }
+
+            var memberships = await TenantMembershipService.GetActiveMembershipsAsync(user.UserId);
+            _memberships.AddRange(memberships.Select(x => new TenantOption(x.Tenant.TenantId, x.Tenant.Name, x.Membership.Role)));
+        }
+        catch
+        {
+            _loadError = "Tenant selection token is invalid or expired.";
+        }
+    }
+
+    private static string NormalizeReturnUrl(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value) || !value.StartsWith('/') || value.StartsWith("//", StringComparison.Ordinal))
+        {
+            return "/";
+        }
+
+        return value;
+    }
+
+    private sealed record TenantOption(string TenantId, string Name, string Role);
+}

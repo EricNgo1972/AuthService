@@ -1,0 +1,82 @@
+@page "/switch-tenant"
+@attribute [Authorize]
+@inject AuthenticationStateProvider AuthenticationStateProvider
+@inject ITenantMembershipService TenantMembershipService
+
+<PageTitle>Switch Tenant</PageTitle>
+
+<section class="page narrow">
+    <div class="panel stack">
+        <p class="eyebrow">Tenant Context</p>
+        <h1>Switch tenant</h1>
+        <p class="muted">Choose another tenant available to your current account.</p>
+
+        @if (!string.IsNullOrWhiteSpace(Error))
+        {
+            <div class="alert error">@Error</div>
+        }
+
+        @if (_tenants.Count == 0)
+        {
+            <div class="alert warning">No alternate tenant is available for this account.</div>
+        }
+        else
+        {
+            <div class="stack">
+                @foreach (var tenant in _tenants)
+                {
+                    <form method="post" action="/session/switch-tenant" class="tenant-card">
+                        <input type="hidden" name="tenantId" value="@tenant.TenantId" />
+                        <input type="hidden" name="returnUrl" value="@ReturnUrl" />
+                        <div>
+                            <h2>@tenant.Name</h2>
+                            <p class="muted">@tenant.TenantId</p>
+                        </div>
+                        <span class="tag">@tenant.Role</span>
+                        <button class="button primary" type="submit">Switch</button>
+                    </form>
+                }
+            </div>
+        }
+    </div>
+</section>
+
+@code {
+    [SupplyParameterFromQuery]
+    public string? Error { get; set; }
+
+    [SupplyParameterFromQuery]
+    public string? ReturnUrl { get; set; }
+
+    private readonly List<TenantOption> _tenants = [];
+
+    protected override async Task OnInitializedAsync()
+    {
+        var authState = await AuthenticationStateProvider.GetAuthenticationStateAsync();
+        var principal = authState.User;
+        var userId = principal.FindFirst("userid")?.Value;
+        var currentTenantId = principal.FindFirst("tenantid")?.Value;
+        ReturnUrl = NormalizeReturnUrl(ReturnUrl);
+        if (string.IsNullOrWhiteSpace(userId))
+        {
+            return;
+        }
+
+        var memberships = await TenantMembershipService.GetActiveMembershipsAsync(userId);
+        _tenants.AddRange(memberships
+            .Where(x => !string.Equals(x.Tenant.TenantId, currentTenantId, StringComparison.OrdinalIgnoreCase))
+            .Select(x => new TenantOption(x.Tenant.TenantId, x.Tenant.Name, x.Membership.Role)));
+    }
+
+    private static string NormalizeReturnUrl(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value) || !value.StartsWith('/') || value.StartsWith("//", StringComparison.Ordinal))
+        {
+            return "/manage";
+        }
+
+        return value;
+    }
+
+    private sealed record TenantOption(string TenantId, string Name, string Role);
+}

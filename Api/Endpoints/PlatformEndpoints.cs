@@ -25,10 +25,10 @@ public static class PlatformEndpoints
 
     private static async Task<IResult> CreateTenantAsync(CreateTenantRequest request, ITenantService tenantService, IAuditService auditService, ClaimsPrincipal principal, CancellationToken cancellationToken)
     {
-        var result = await tenantService.CreateTenantAsync(request.TenantId, request.Name, request.AdminEmail, request.AdminPassword, cancellationToken);
+        var result = await tenantService.CreateTenantAsync(request.TenantId, request.Name, request.AdminDisplayName, request.AdminEmail, request.AdminPassword, cancellationToken);
         await auditService.LogEventAsync(request.TenantId, principal.FindFirstValue("userid"), "platform_create_tenant", result.Succeeded ? "success" : "failure", null, null, result.ErrorMessage, cancellationToken);
         return result.Succeeded
-            ? Results.Created($"/platform/tenants/{result.Value!.Tenant.TenantId}", MapTenant(result.Value.Tenant))
+            ? Results.Created($"/api/platform/tenants/{result.Value!.Tenant.TenantId}", MapTenant(result.Value.Tenant))
             : Results.BadRequest(new MessageResponse(result.ErrorMessage ?? "Create tenant failed."));
     }
 
@@ -55,7 +55,7 @@ public static class PlatformEndpoints
 
     private static async Task<IResult> AddTenantUserAsync(string tenantId, CreateUserRequest request, ITenantMembershipService membershipService, IIdentityService identityService, CancellationToken cancellationToken)
     {
-        var result = await membershipService.AddUserToTenantAsync(tenantId, request.Email, request.Password, request.Role, request.IsActive, cancellationToken);
+        var result = await membershipService.AddUserToTenantAsync(tenantId, request.DisplayName, request.Email, request.Password, request.Role, request.IsActive, cancellationToken);
         if (!result.Succeeded || result.Value is null)
         {
             return Results.BadRequest(new MessageResponse(result.ErrorMessage ?? "Create tenant user failed."));
@@ -64,7 +64,7 @@ public static class PlatformEndpoints
         var user = await identityService.GetByIdAsync(result.Value.UserId, cancellationToken);
         return user is null
             ? Results.BadRequest(new MessageResponse("Create tenant user failed."))
-            : Results.Created($"/platform/tenants/{tenantId}/users/{user.UserId}", new TenantUserResponse(MapUser(user), new TenantAccessResponse(tenantId, tenantId, result.Value.Role, result.Value.IsActive)));
+            : Results.Created($"/api/platform/tenants/{tenantId}/users/{user.UserId}", new TenantUserResponse(MapUser(user), new TenantAccessResponse(tenantId, tenantId, result.Value.Role, result.Value.IsActive)));
     }
 
     private static async Task<IResult> ListTenantUsersAsync(string tenantId, ITenantMembershipService membershipService, IIdentityService identityService, ITenantService tenantService, CancellationToken cancellationToken)
@@ -116,5 +116,5 @@ public static class PlatformEndpoints
         => new(tenant.TenantId, tenant.Name, tenant.IsActive, tenant.CreatedAtUtc, tenant.UpdatedAtUtc);
 
     private static UserResponse MapUser(User user)
-        => new(user.UserId, user.Email, user.Role, user.IsActive, user.MustChangePassword, user.PasswordChangedAtUtc, user.CreatedAtUtc, user.UpdatedAtUtc, user.LastLoginAtUtc);
+        => new(user.UserId, user.DisplayName, user.Email, user.Role, user.IsActive, user.MustChangePassword, user.PasswordChangedAtUtc, user.CreatedAtUtc, user.UpdatedAtUtc, user.LastLoginAtUtc);
 }

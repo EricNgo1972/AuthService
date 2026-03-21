@@ -1,11 +1,23 @@
 using System.Security.Claims;
+using AuthService.Api.Components;
 using AuthService.Api.Endpoints;
+using AuthService.Api.Security;
 using AuthService.Infrastructure;
 using AuthService.Infrastructure.Security;
+using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.OpenApi.Models;
 
+const string UiCookieScheme = UiPrincipalFactory.SchemeName;
+const string CombinedScheme = "CombinedAuth";
+
 var builder = WebApplication.CreateBuilder(args);
+
+builder.Services.AddHttpContextAccessor();
+builder.Services.AddRazorComponents()
+    .AddInteractiveServerComponents();
+builder.Services.AddCascadingAuthenticationState();
+builder.Services.AddScoped<UiPrincipalFactory>();
 
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen(options =>
@@ -14,7 +26,7 @@ builder.Services.AddSwaggerGen(options =>
     {
         Title = "AuthService API",
         Version = "v1",
-        Description = "Authentication service using .NET 8 Minimal API, JWT, and Azure Table Storage."
+        Description = "Authentication service and admin platform using .NET 8, Blazor Server, JWT, and Azure Table Storage."
     });
 
     options.AddSecurityDefinition("Bearer", new OpenApiSecurityScheme
@@ -54,7 +66,27 @@ builder.Services.AddAuthorization(options =>
 builder.Services.AddInfrastructure(builder.Configuration);
 
 builder.Services
-    .AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
+    .AddAuthentication(options =>
+    {
+        options.DefaultScheme = CombinedScheme;
+        options.DefaultAuthenticateScheme = CombinedScheme;
+        options.DefaultChallengeScheme = CombinedScheme;
+    })
+    .AddPolicyScheme(CombinedScheme, "Select JWT for API and cookie auth for UI.", options =>
+    {
+        options.ForwardDefaultSelector = context =>
+            context.Request.Path.StartsWithSegments("/api", StringComparison.OrdinalIgnoreCase)
+                ? JwtBearerDefaults.AuthenticationScheme
+                : UiCookieScheme;
+    })
+    .AddCookie(UiCookieScheme, options =>
+    {
+        options.LoginPath = "/login";
+        options.AccessDeniedPath = "/";
+        options.Cookie.Name = "AuthService.Ui";
+        options.SlidingExpiration = true;
+        options.ExpireTimeSpan = TimeSpan.FromHours(12);
+    })
     .AddJwtBearer();
 
 var app = builder.Build();
@@ -65,14 +97,16 @@ using (var scope = app.Services.CreateScope())
     await initializer.InitializeAsync();
 }
 
-app.UseSwagger();
+app.UseHttpsRedirection();
+app.UseSwagger(options => options.RouteTemplate = "api/swagger/{documentName}/swagger.json");
 app.UseSwaggerUI(options =>
 {
     options.DocumentTitle = "AuthService API";
-    options.SwaggerEndpoint("/swagger/v1/swagger.json", "AuthService API v1");
-    options.RoutePrefix = "swagger";
+    options.SwaggerEndpoint("/api/swagger/v1/swagger.json", "AuthService API v1");
+    options.RoutePrefix = "api/swagger";
 });
 
+app.UseStaticFiles();
 app.UseAuthentication();
 app.Use(async (context, next) =>
 {
@@ -84,164 +118,23 @@ app.Use(async (context, next) =>
     await next();
 });
 app.UseAuthorization();
+app.UseAntiforgery();
 
-app.MapGet("/", () => Results.Content(
-    """
-    <!DOCTYPE html>
-    <html lang="en">
-    <head>
-        <meta charset="utf-8" />
-        <meta name="viewport" content="width=device-width, initial-scale=1" />
-        <title>AuthService</title>
-        <style>
-            :root {
-                color-scheme: dark;
-                --bg: #0b1220;
-                --panel: #111827;
-                --muted: #94a3b8;
-                --text: #e5e7eb;
-                --accent: #38bdf8;
-                --ok: #22c55e;
-                --border: #1f2937;
-            }
-            * { box-sizing: border-box; }
-            body {
-                margin: 0;
-                font-family: Consolas, "SFMono-Regular", Menlo, Monaco, monospace;
-                background:
-                    radial-gradient(circle at top, rgba(56,189,248,.14), transparent 30%),
-                    linear-gradient(180deg, #020617 0%, var(--bg) 100%);
-                color: var(--text);
-                min-height: 100vh;
-                display: grid;
-                place-items: center;
-                padding: 24px;
-            }
-            .card {
-                width: min(860px, 100%);
-                background: rgba(17, 24, 39, 0.92);
-                border: 1px solid var(--border);
-                border-radius: 18px;
-                padding: 28px;
-                box-shadow: 0 24px 80px rgba(0, 0, 0, 0.45);
-            }
-            h1 {
-                margin: 0 0 10px;
-                font-size: clamp(28px, 4vw, 40px);
-            }
-            p {
-                color: var(--muted);
-                line-height: 1.6;
-            }
-            .status {
-                display: inline-flex;
-                align-items: center;
-                gap: 10px;
-                background: rgba(34, 197, 94, 0.12);
-                color: #bbf7d0;
-                border: 1px solid rgba(34, 197, 94, 0.25);
-                border-radius: 999px;
-                padding: 10px 14px;
-                margin: 12px 0 18px;
-            }
-            .dot {
-                width: 10px;
-                height: 10px;
-                border-radius: 50%;
-                background: var(--ok);
-                box-shadow: 0 0 14px var(--ok);
-            }
-            .grid {
-                display: grid;
-                grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
-                gap: 16px;
-                margin-top: 24px;
-            }
-            .panel {
-                background: rgba(2, 6, 23, 0.7);
-                border: 1px solid var(--border);
-                border-radius: 14px;
-                padding: 18px;
-            }
-            .panel h2 {
-                margin: 0 0 12px;
-                font-size: 15px;
-                color: var(--accent);
-                text-transform: uppercase;
-                letter-spacing: .08em;
-            }
-            code, a {
-                color: #7dd3fc;
-            }
-            ul {
-                padding-left: 18px;
-                margin: 0;
-                color: var(--muted);
-            }
-            li + li {
-                margin-top: 8px;
-            }
-        </style>
-    </head>
-    <body>
-        <main class="card">
-            <h1>AuthService</h1>
-            <div class="status"><span class="dot"></span><span>Healthy</span></div>
-            <p>Minimal API authentication backend with JWT, refresh token rotation, Azure Table Storage, tenant isolation, and admin management endpoints.</p>
-            <div class="grid">
-                <section class="panel">
-                    <h2>Bootstrap Admin</h2>
-                    <ul>
-                        <li>Tenant: <code>root</code></li>
-                        <li>Login: <code>admin</code></li>
-                        <li>Password: <code>admin</code></li>
-                        <li>Change the default password after first login for security.</li>
-                    </ul>
-                </section>
-                <section class="panel">
-                    <h2>OpenAPI</h2>
-                    <ul>
-                        <li>Swagger UI: <a href="/swagger">/swagger</a></li>
-                        <li>OpenAPI JSON: <code>/swagger/v1/swagger.json</code></li>
-                    </ul>
-                </section>
-                <section class="panel">
-                    <h2>Public Endpoints</h2>
-                    <ul>
-                        <li><code>POST /auth/register</code></li>
-                        <li><code>POST /auth/login</code></li>
-                        <li><code>POST /auth/refresh</code></li>
-                        <li><code>POST /auth/forgot-password</code></li>
-                        <li><code>POST /auth/reset-password</code></li>
-                    </ul>
-                </section>
-                <section class="panel">
-                    <h2>Authenticated</h2>
-                    <ul>
-                        <li><code>POST /auth/logout</code></li>
-                        <li><code>GET /auth/me</code></li>
-                        <li><code>POST /auth/change-password</code></li>
-                    </ul>
-                </section>
-                <section class="panel">
-                    <h2>Admin</h2>
-                    <ul>
-                        <li><code>POST /admin/users</code></li>
-                        <li><code>GET /admin/users/{id}</code></li>
-                        <li><code>PATCH /admin/users/{id}/role</code></li>
-                        <li><code>PATCH /admin/users/{id}/status</code></li>
-                        <li><code>POST /admin/users/{id}/reset-password</code></li>
-                    </ul>
-                </section>
-            </div>
-        </main>
-    </body>
-    </html>
-    """,
-    "text/html"));
+app.MapGet("/api/health", () => Results.Ok(new
+{
+    status = "Healthy",
+    serverTimeUtc = DateTimeOffset.UtcNow
+}));
 
-app.MapAuthEndpoints();
-app.MapAdminEndpoints();
-app.MapPlatformEndpoints();
+var api = app.MapGroup("/api");
+api.MapAuthEndpoints();
+api.MapAdminEndpoints();
+api.MapPlatformEndpoints();
+
+app.MapUiSessionEndpoints();
+app.MapRazorComponents<App>()
+    .AddInteractiveServerRenderMode();
 
 app.Run();
+
+public partial class Program;

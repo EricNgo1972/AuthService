@@ -11,6 +11,7 @@ public sealed record ChangePasswordRequest(string CurrentPassword, string NewPas
 
 public sealed record UserResponse(
     string UserId,
+    string DisplayName,
     string Email,
     string PlatformRole,
     bool IsActive,

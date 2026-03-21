@@ -1,6 +1,6 @@
 # AuthService
 
-Authentication service built with .NET 8 Minimal API, Azure Table Storage, custom JWT authentication, global user identities, tenant memberships, tenant-scoped authorization, and role-based administration.
+Authentication and administration service built with .NET 8, Blazor Server, Azure Table Storage, custom JWT authentication, global user identities, tenant memberships, tenant-scoped authorization, and role-based administration.
 
 ## Structure
 
@@ -15,19 +15,20 @@ AuthService/
 
 ## Features
 
-- .NET 8 Minimal API
+- .NET 8 Blazor Server host with integrated `/api/*` API
 - Azure Table Storage with direct-key lookups
-- JWT access tokens
-- Refresh token rotation
+- JWT access tokens and refresh token rotation
 - Password reset flow
 - Global user identities with tenant memberships
+- `DisplayName` on users
 - Platform admin and tenant admin permissions
 - Tenant CRUD and tenant-user management APIs
+- Built-in dark-mode UI for account, tenant, and user management
+- UI tenant switching for multi-tenant users
 - Login with automatic tenant selection when only one tenant is available
 - SendGrid email notifications for account creation, tenant assignment, password change, and password reset
 - Custom secret provider with environment-variable-first fallback
 - Swagger UI
-- Root health and API instructions page
 
 ## Configuration
 
@@ -56,13 +57,6 @@ Important app settings:
 - `Email:FromAddress`
 - `Email:FromName`
 
-Example environment variables:
-
-```bash
-export JWT_SIGNING_KEY="replace-with-a-long-random-secret"
-export STORAGE_CONNECTION_STRING="UseDevelopmentStorage=true"
-```
-
 ## Run
 
 From the repository root:
@@ -71,10 +65,10 @@ From the repository root:
 '/mnt/c/Program Files/dotnet/dotnet.exe' run --project AuthService/Api/Api.csproj
 ```
 
-Or from Windows:
+## Build
 
-```powershell
-dotnet run --project AuthService\Api\Api.csproj
+```bash
+'/mnt/c/Program Files/dotnet/dotnet.exe' build AuthService/AuthService.sln -v minimal
 ```
 
 ## First Launch
@@ -84,18 +78,32 @@ Default bootstrap platform admin:
 - TenantId: `root`
 - Email: `admin`
 - Password: `admin`
+- DisplayName: `Platform Admin`
 
 The bootstrap user is created as a global platform admin and is also assigned as an admin member of the `root` tenant.
 
-## Build
+## Public Pages
 
-```bash
-'/mnt/c/Program Files/dotnet/dotnet.exe' build AuthService/AuthService.sln -v minimal
-```
+- `/` public health and system dashboard
+- `/manage` role-based entry point for authenticated management
+- `/login`
+- `/select-tenant`
+- `/switch-tenant`
+- `/forgot-password`
+- `/reset-password`
+- `/account`
+
+## Management Routing
+
+`/manage` routes authenticated users to the correct area:
+
+- platform admin -> `/platform/tenants`
+- tenant admin -> `/admin/users`
+- regular user -> `/account`
 
 ## Authentication Flow
 
-`POST /auth/login` now works in two modes:
+`POST /api/auth/login` works in two modes:
 
 - If the user has exactly one active tenant membership, login automatically returns:
   - `accessToken`
@@ -104,54 +112,53 @@ The bootstrap user is created as a global platform admin and is also assigned as
 - If the user has multiple active tenant memberships, login returns:
   - `loginToken`
   - tenant list
-  - client must then call `POST /auth/select-tenant`
+  - client must then call `POST /api/auth/select-tenant`
 
-`POST /auth/register` is disabled.
+`POST /api/auth/register` is disabled.
 
 ## API Surface
 
 Public endpoints:
 
-- `POST /auth/login`
-- `POST /auth/select-tenant`
-- `POST /auth/refresh`
-- `POST /auth/forgot-password`
-- `POST /auth/reset-password`
+- `POST /api/auth/login`
+- `POST /api/auth/select-tenant`
+- `POST /api/auth/refresh`
+- `POST /api/auth/forgot-password`
+- `POST /api/auth/reset-password`
 
 Authenticated endpoints:
 
-- `POST /auth/logout`
-- `GET /auth/me`
-- `POST /auth/change-password`
+- `POST /api/auth/logout`
+- `GET /api/auth/me`
+- `POST /api/auth/change-password`
 
 Tenant admin or platform admin endpoints:
 
-- `POST /admin/users`
-- `GET /admin/users/{id}`
-- `PATCH /admin/users/{id}/role`
-- `PATCH /admin/users/{id}/status`
-- `POST /admin/users/{id}/reset-password`
+- `POST /api/admin/users`
+- `GET /api/admin/users`
+- `GET /api/admin/users/{id}`
+- `PATCH /api/admin/users/{id}/role`
+- `PATCH /api/admin/users/{id}/status`
+- `POST /api/admin/users/{id}/reset-password`
 
 Platform admin endpoints:
 
-- `POST /platform/tenants`
-- `GET /platform/tenants`
-- `GET /platform/tenants/{tenantId}`
-- `PATCH /platform/tenants/{tenantId}`
-- `PATCH /platform/tenants/{tenantId}/status`
-- `POST /platform/tenants/{tenantId}/users`
-- `GET /platform/tenants/{tenantId}/users/{userId}`
-- `PATCH /platform/tenants/{tenantId}/users/{userId}/role`
-- `PATCH /platform/tenants/{tenantId}/users/{userId}/status`
+- `POST /api/platform/tenants`
+- `GET /api/platform/tenants`
+- `GET /api/platform/tenants/{tenantId}`
+- `PATCH /api/platform/tenants/{tenantId}`
+- `PATCH /api/platform/tenants/{tenantId}/status`
+- `POST /api/platform/tenants/{tenantId}/users`
+- `GET /api/platform/tenants/{tenantId}/users`
+- `GET /api/platform/tenants/{tenantId}/users/{userId}`
+- `PATCH /api/platform/tenants/{tenantId}/users/{userId}/role`
+- `PATCH /api/platform/tenants/{tenantId}/users/{userId}/status`
 
-## Swagger
+## Health and Swagger
 
-- UI: `/swagger`
-- OpenAPI JSON: `/swagger/v1/swagger.json`
-
-## Root Page
-
-- `/` returns a dark-mode HTML page with health status and API instructions.
+- `/api/health` returns service health
+- `/api/swagger` serves Swagger UI
+- `/api/swagger/v1/swagger.json` serves the OpenAPI document
 
 ## Storage Design
 
@@ -198,6 +205,7 @@ Azure Table Storage tables:
 - Tenant-scoped access token claims include:
   - `sub`
   - `userid`
+  - `displayname`
   - `email`
   - `platformrole`
   - `platformadmin`
@@ -228,5 +236,5 @@ Implementation details:
 - No ASP.NET Identity
 - No Entity Framework
 - No SQL database
-- No UI application
+- Single host serves both UI and integration APIs
 - Business logic is split across clean architecture layers

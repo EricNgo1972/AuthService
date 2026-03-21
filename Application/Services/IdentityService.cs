@@ -52,16 +52,16 @@ public sealed class IdentityService(
         return await userRepository.GetByIdAsync(userId, cancellationToken);
     }
 
-    public Task<OperationResult<User>> CreateUserAsync(string email, string password, string platformRole, bool isActive, bool mustChangePassword, CancellationToken cancellationToken = default)
-        => CreateUserInternalAsync(email, password, platformRole, isActive, mustChangePassword, mustChangePassword, cancellationToken);
+    public Task<OperationResult<User>> CreateUserAsync(string displayName, string email, string password, string platformRole, bool isActive, bool mustChangePassword, CancellationToken cancellationToken = default)
+        => CreateUserInternalAsync(displayName, email, password, platformRole, isActive, mustChangePassword, mustChangePassword, cancellationToken);
 
-    public async Task<OperationResult<User>> CreateBootstrapAdminAsync(string tenantId, string email, string password, CancellationToken cancellationToken = default)
+    public async Task<OperationResult<User>> CreateBootstrapAdminAsync(string tenantId, string displayName, string email, string password, CancellationToken cancellationToken = default)
     {
-        var result = await CreateUserInternalAsync(email, password, SystemRoles.PlatformAdmin, true, false, true, cancellationToken);
+        var result = await CreateUserInternalAsync(displayName, email, password, SystemRoles.PlatformAdmin, true, false, true, cancellationToken);
         return result;
     }
 
-    private async Task<OperationResult<User>> CreateUserInternalAsync(string email, string password, string platformRole, bool isActive, bool mustChangePassword, bool skipPasswordPolicy, CancellationToken cancellationToken)
+    private async Task<OperationResult<User>> CreateUserInternalAsync(string displayName, string email, string password, string platformRole, bool isActive, bool mustChangePassword, bool skipPasswordPolicy, CancellationToken cancellationToken)
     {
         var normalizedEmail = email.Trim().ToUpperInvariant();
         var existingUserId = await userEmailIndexRepository.GetUserIdAsync(normalizedEmail, cancellationToken);
@@ -84,6 +84,7 @@ public sealed class IdentityService(
         {
             UserId = Guid.NewGuid().ToString("N"),
             TenantId = string.Empty,
+            DisplayName = string.IsNullOrWhiteSpace(displayName) ? email.Trim() : displayName.Trim(),
             Email = email.Trim(),
             NormalizedEmail = normalizedEmail,
             PasswordHash = await passwordService.HashPasswordAsync(password, cancellationToken),

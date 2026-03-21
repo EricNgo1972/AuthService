@@ -1,0 +1,46 @@
+@page "/manage"
+@attribute [AllowAnonymous]
+@inject NavigationManager NavigationManager
+@inject AuthenticationStateProvider AuthenticationStateProvider
+
+<PageTitle>Manage</PageTitle>
+
+<section class="page narrow">
+    <div class="panel stack">
+        <p class="eyebrow">Routing</p>
+        <h1>Opening management console</h1>
+        <p class="muted">Your session is being routed to the correct management area.</p>
+    </div>
+</section>
+
+@code {
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender)
+        {
+            return;
+        }
+
+        var authState = await AuthenticationStateProvider.GetAuthenticationStateAsync();
+        var user = authState.User;
+        if (user.Identity?.IsAuthenticated != true)
+        {
+            NavigationManager.NavigateTo("/login?returnUrl=%2Fmanage", true);
+            return;
+        }
+
+        if (user.HasClaim("platformadmin", "true"))
+        {
+            NavigationManager.NavigateTo("/platform/tenants", true);
+            return;
+        }
+
+        if (user.IsInRole(SystemRoles.Admin))
+        {
+            NavigationManager.NavigateTo("/admin/users", true);
+            return;
+        }
+
+        NavigationManager.NavigateTo("/account", true);
+    }
+}

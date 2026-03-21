@@ -1,0 +1,103 @@
+@page "/"
+@attribute [AllowAnonymous]
+@inject ITenantService TenantService
+@inject IAuditService AuditService
+@inject AuthenticationStateProvider AuthenticationStateProvider
+
+<PageTitle>AuthService</PageTitle>
+
+<section class="page">
+    <div class="hero">
+        <div class="hero-copy stack">
+            <p class="eyebrow">API Status</p>
+            <h1>AuthService is running</h1>
+            <p class="muted">This host provides the main authentication API for SPC applications, plus a small built-in management UI for accounts, tenants, and users.</p>
+        </div>
+        <div class="actions">
+            <a class="button primary" href="/manage">@(_isAuthenticated ? "Manage" : "Manage or Login")</a>
+            <a class="button secondary" href="/api/swagger" target="_blank">Swagger</a>
+        </div>
+    </div>
+
+    <div class="card-grid">
+        <article class="panel stack">
+            <p class="eyebrow">Health</p>
+            <h2>Running status</h2>
+            <p><span class="tag">Healthy</span></p>
+            <p class="muted">Server time (UTC): @_nowUtc.ToString("u")</p>
+        </article>
+        <article class="panel stack">
+            <p class="eyebrow">Tenants</p>
+            <h2>General info</h2>
+            <p class="muted">Total tenants: @_tenantCount</p>
+            <p class="muted">Active tenants: @_activeTenantCount</p>
+        </article>
+        <article class="panel stack">
+            <p class="eyebrow">Integration</p>
+            <h2>Main endpoints</h2>
+            <p class="muted"><code>/api/auth/*</code> for auth flows</p>
+            <p class="muted"><code>/api/admin/*</code> for tenant admin APIs</p>
+            <p class="muted"><code>/api/platform/*</code> for platform APIs</p>
+        </article>
+    </div>
+
+    <div class="panel stack">
+        <p class="eyebrow">Latest Events</p>
+        <h2>System dashboard</h2>
+        @if (_events.Count == 0)
+        {
+            <p class="muted">No public system events are available yet.</p>
+        }
+        else
+        {
+            <div class="table-shell">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Time (UTC)</th>
+                            <th>Event</th>
+                            <th>Outcome</th>
+                            <th>Details</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var item in _events)
+                        {
+                            <tr>
+                                <td class="muted">@item.OccurredAtUtc.ToString("u")</td>
+                                <td>@item.EventType</td>
+                                <td>
+                                    <span class="tag @(item.Outcome == "success" ? null : "inactive")">@item.Outcome</span>
+                                </td>
+                                <td class="muted">@(!string.IsNullOrWhiteSpace(item.Details) ? item.Details : "-")</td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        }
+    </div>
+</section>
+
+@code {
+    private readonly List<AuditEvent> _events = [];
+    private bool _isAuthenticated;
+    private DateTimeOffset _nowUtc;
+    private int _tenantCount;
+    private int _activeTenantCount;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _nowUtc = DateTimeOffset.UtcNow;
+        var authState = await AuthenticationStateProvider.GetAuthenticationStateAsync();
+        _isAuthenticated = authState.User.Identity?.IsAuthenticated == true;
+
+        var tenants = await TenantService.ListAsync();
+        var visibleTenants = tenants.Where(x => !string.Equals(x.TenantId, "root", StringComparison.OrdinalIgnoreCase)).ToList();
+        _tenantCount = visibleTenants.Count;
+        _activeTenantCount = visibleTenants.Count(x => x.IsActive);
+
+        _events.Clear();
+        _events.AddRange(await AuditService.GetLatestEventsAsync("SYSTEM", 12));
+    }
+}

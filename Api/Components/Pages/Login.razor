@@ -1,0 +1,74 @@
+@page "/login"
+@attribute [AllowAnonymous]
+@inject NavigationManager NavigationManager
+@inject AuthenticationStateProvider AuthenticationStateProvider
+
+<PageTitle>Login</PageTitle>
+
+<section class="page narrow">
+    <div class="panel stack">
+        <p class="eyebrow">Sign In</p>
+        <h1>Access the admin console</h1>
+        <p class="muted">Login with your global email and password. Single-tenant users go straight in. Multi-tenant users select a tenant next.</p>
+
+        @if (!string.IsNullOrWhiteSpace(Error))
+        {
+            <div class="alert error">@Error</div>
+        }
+
+        @if (!string.IsNullOrWhiteSpace(Message))
+        {
+            <div class="alert success">@Message</div>
+        }
+
+        <form method="post" action="/session/login" class="stack">
+            <input type="hidden" name="returnUrl" value="@ReturnUrl" />
+            <label class="field">
+                <span>Email</span>
+                <input name="email" autocomplete="username" />
+            </label>
+            <label class="field">
+                <span>Password</span>
+                <input type="password" name="password" autocomplete="current-password" />
+            </label>
+            <button class="button primary" type="submit">Sign in</button>
+        </form>
+
+        <div class="inline-links">
+            <a href="/forgot-password">Forgot password</a>
+            <a href="/api/swagger" target="_blank">Swagger</a>
+        </div>
+    </div>
+</section>
+
+@code {
+    [SupplyParameterFromQuery]
+    public string? Error { get; set; }
+
+    [SupplyParameterFromQuery]
+    public string? Message { get; set; }
+
+    [SupplyParameterFromQuery]
+    public string? ReturnUrl { get; set; }
+
+    protected override async Task OnInitializedAsync()
+    {
+        var authState = await AuthenticationStateProvider.GetAuthenticationStateAsync();
+        if (authState.User.Identity?.IsAuthenticated == true)
+        {
+            NavigationManager.NavigateTo("/", true);
+        }
+
+        ReturnUrl = NormalizeReturnUrl(ReturnUrl);
+    }
+
+    private static string NormalizeReturnUrl(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value) || !value.StartsWith('/') || value.StartsWith("//", StringComparison.Ordinal))
+        {
+            return "/manage";
+        }
+
+        return value;
+    }
+}
