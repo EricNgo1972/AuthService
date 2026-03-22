@@ -9,7 +9,7 @@ AuthService is a combined web application and API for:
 - global user login
 - tenant selection
 - tenant-scoped JWT access
-- refresh tokens
+- refresh-token-backed sessions
 - password reset
 - password change
 - tenant management
@@ -169,15 +169,9 @@ If the user belongs to multiple active tenants, the API returns:
 - `loginToken`
 - list of available tenants
 
-Then call:
+The built-in Blazor UI uses internal host-only `/_ui/session/*` routes to complete tenant selection.
 
-```json
-POST /api/auth/select-tenant
-{
-  "loginToken": "<loginToken>",
-  "tenantId": "root"
-}
-```
+There is no public `POST /api/auth/select-tenant` endpoint.
 
 ## Swagger Authorization
 
@@ -204,31 +198,24 @@ POST /api/auth/change-password
 
 After password change, existing sessions are revoked.
 
-## Refresh Access Token
-
-When the access token expires, use the refresh token:
-
-```json
-POST /api/auth/refresh
-{
-  "tenantId": "tenant-a",
-  "refreshToken": "<refreshToken>"
-}
-```
-
-Always replace the old refresh token with the new one.
-
 ## Logout
 
-To logout and revoke the current refresh token:
+To logout from the public API:
 
 ```json
 POST /api/auth/logout
-{
-  "tenantId": "tenant-a",
-  "refreshToken": "<refreshToken>"
-}
 ```
+
+Requirements:
+
+- send a valid `Authorization: Bearer <accessToken>` header
+- no request body is required
+
+Behavior:
+
+- revokes all sessions for the authenticated user
+- invalidates older JWT access tokens for that user on subsequent API calls
+- signs the API client out across all tenants for that user
 
 ## Forgot Password
 
@@ -255,8 +242,10 @@ POST /api/auth/reset-password
 }
 ```
 
-## Public Registration
+## Public API Notes
 
-`POST /api/auth/register` is disabled.
-
-Users are created by platform admins or tenant admins through management APIs.
+- `POST /api/auth/register` does not exist
+- `POST /api/auth/select-tenant` does not exist
+- `POST /api/auth/refresh` does not exist
+- users are created by platform admins or tenant admins through management APIs
+- tenant selection for the built-in UI is internal to this host

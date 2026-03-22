@@ -2,19 +2,19 @@ using System.Security.Claims;
 using AuthService.Api.Contracts;
 using AuthService.Application.Interfaces;
 using AuthService.Domain.Entities;
+using AuthService.Domain.Enums;
 
 namespace AuthService.Api.Endpoints;
 
 public static class AuthEndpoints
 {
+    private const string RootTenantId = "root";
+
     public static IEndpointRouteBuilder MapAuthEndpoints(this IEndpointRouteBuilder app)
     {
         var auth = app.MapGroup("/auth");
 
-        auth.MapPost("/register", () => Results.Forbid());
         auth.MapPost("/login", LoginAsync);
-        auth.MapPost("/select-tenant", SelectTenantAsync);
-        auth.MapPost("/refresh", RefreshAsync);
         auth.MapPost("/forgot-password", ForgotPasswordAsync);
         auth.MapPost("/reset-password", ResetPasswordAsync);
         auth.MapPost("/logout", LogoutAsync).RequireAuthorization();
@@ -50,7 +50,13 @@ public static class AuthEndpoints
         }
 
         await identityService.RecordLoginSuccessAsync(user, cancellationToken);
-        var memberships = await tenantMembershipService.GetActiveMembershipsAsync(user.UserId, cancellationToken);
+        var memberships = FilterVisibleMemberships(user, await tenantMembershipService.GetActiveMembershipsAsync(user.UserId, cancellationToken));
+        if (memberships.Count == 0)
+        {
+            await auditService.LogEventAsync("SYSTEM", user.UserId, "login", "failure", ip, userAgent, "No visible tenant memberships.", cancellationToken);
+            return Results.Unauthorized();
+        }
+
         if (memberships.Count == 1)
         {
             var membership = memberships[0];
@@ -82,62 +88,6 @@ public static class AuthEndpoints
             MapUser(user),
             null,
             memberships.Select(x => new TenantAccessResponse(x.Tenant.TenantId, x.Tenant.Name, x.Membership.Role, x.Membership.IsActive)).ToList()));
-    }
-
-    private static async Task<IResult> SelectTenantAsync(SelectTenantRequest request, ITokenService tokenService, IIdentityService identityService, ITenantMembershipService tenantMembershipService, ISessionService sessionService, HttpContext httpContext, CancellationToken cancellationToken)
-    {
-        var principal = await tokenService.ValidateJwtAsync(request.LoginToken, cancellationToken);
-        if (!string.Equals(principal.FindFirstValue("pretenant"), "true", StringComparison.OrdinalIgnoreCase))
-        {
-            return Results.BadRequest(new MessageResponse("Login token is invalid."));
-        }
-
-        var userId = principal.FindFirstValue("userid");
-        if (string.IsNullOrWhiteSpace(userId))
-        {
-            return Results.Unauthorized();
-        }
-
-        var user = await identityService.GetByIdAsync(userId, cancellationToken);
-        if (user is null)
-        {
-            return Results.Unauthorized();
-        }
-
-        var membershipResult = await tenantMembershipService.ValidateMembershipAsync(request.TenantId, userId, cancellationToken);
-        if (!membershipResult.Succeeded || membershipResult.Value is null)
-        {
-            return Results.BadRequest(new MessageResponse(membershipResult.ErrorMessage ?? "Invalid tenant selection."));
-        }
-
-        var memberships = await tenantMembershipService.GetActiveMembershipsAsync(userId, cancellationToken);
-        var tenantInfo = memberships.First(x => x.Tenant.TenantId == request.TenantId);
-        var accessToken = await tokenService.GenerateAccessTokenAsync(user, membershipResult.Value, cancellationToken);
-        var refreshToken = await tokenService.GenerateRefreshTokenAsync(cancellationToken);
-        await sessionService.CreateSessionAsync(user, request.TenantId, refreshToken, httpContext.Connection.RemoteIpAddress?.ToString(), httpContext.Request.Headers.UserAgent.ToString(), cancellationToken);
-        return Results.Ok(new AuthResponse(accessToken.Token, refreshToken.Token, accessToken.ExpiresAtUtc, MapUser(user), new TenantAccessResponse(tenantInfo.Tenant.TenantId, tenantInfo.Tenant.Name, tenantInfo.Membership.Role, tenantInfo.Membership.IsActive)));
-    }
-
-    private static async Task<IResult> RefreshAsync(RefreshRequest request, ITokenService tokenService, IIdentityService identityService, ITenantMembershipService tenantMembershipService, ISessionService sessionService, IAuditService auditService, HttpContext httpContext, CancellationToken cancellationToken)
-    {
-        var rotation = await sessionService.RotateSessionAsync(request.TenantId, request.RefreshToken, httpContext.Connection.RemoteIpAddress?.ToString(), httpContext.Request.Headers.UserAgent.ToString(), cancellationToken);
-        if (!rotation.Succeeded)
-        {
-            await auditService.LogEventAsync(request.TenantId, null, "refresh", "failure", httpContext.Connection.RemoteIpAddress?.ToString(), httpContext.Request.Headers.UserAgent.ToString(), rotation.ErrorMessage, cancellationToken);
-            return Results.Unauthorized();
-        }
-
-        var user = await identityService.GetByIdAsync(rotation.Value!.NextSession.UserId, cancellationToken);
-        var membership = await tenantMembershipService.ValidateMembershipAsync(request.TenantId, rotation.Value.NextSession.UserId, cancellationToken);
-        if (user is null || !membership.Succeeded || membership.Value is null)
-        {
-            return Results.Unauthorized();
-        }
-
-        var tenantInfo = (await tenantMembershipService.GetActiveMembershipsAsync(user.UserId, cancellationToken)).First(x => x.Tenant.TenantId == request.TenantId);
-        var accessToken = await tokenService.GenerateAccessTokenAsync(user, membership.Value, cancellationToken);
-        await auditService.LogEventAsync(request.TenantId, user.UserId, "refresh", "success", httpContext.Connection.RemoteIpAddress?.ToString(), httpContext.Request.Headers.UserAgent.ToString(), null, cancellationToken);
-        return Results.Ok(new AuthResponse(accessToken.Token, rotation.Value.RefreshToken.Token, accessToken.ExpiresAtUtc, MapUser(user), new TenantAccessResponse(tenantInfo.Tenant.TenantId, tenantInfo.Tenant.Name, tenantInfo.Membership.Role, tenantInfo.Membership.IsActive)));
     }
 
     private static async Task<IResult> ForgotPasswordAsync(ForgotPasswordRequest request, IPasswordResetService passwordResetService, INotificationService notificationService, IAuditService auditService, ILoggerFactory loggerFactory, HttpContext httpContext, CancellationToken cancellationToken)
@@ -187,15 +137,23 @@ public static class AuthEndpoints
         return Results.Ok(new MessageResponse("Password has been reset."));
     }
 
-    private static async Task<IResult> LogoutAsync(LogoutRequest request, ClaimsPrincipal principal, ISessionService sessionService, IAuditService auditService, CancellationToken cancellationToken)
+    private static async Task<IResult> LogoutAsync(ClaimsPrincipal principal, IIdentityService identityService, ISessionService sessionService, IAuditService auditService, CancellationToken cancellationToken)
     {
-        if (principal.FindFirstValue("tenantid") != request.TenantId)
+        var userId = principal.FindFirstValue("userid");
+        if (string.IsNullOrWhiteSpace(userId))
         {
-            return Results.Forbid();
+            return Results.Unauthorized();
         }
 
-        await sessionService.RevokeSessionAsync(request.TenantId, request.RefreshToken, cancellationToken);
-        await auditService.LogEventAsync(request.TenantId, principal.FindFirstValue("userid"), "logout", "success", null, null, null, cancellationToken);
+        var user = await identityService.GetByIdAsync(userId, cancellationToken);
+        if (user is null)
+        {
+            return Results.NotFound();
+        }
+
+        var tenantId = principal.FindFirstValue("tenantid") ?? "SYSTEM";
+        await sessionService.RevokeAllSessionsAsync(user, cancellationToken);
+        await auditService.LogEventAsync(tenantId, userId, "logout", "success", null, null, "All sessions revoked.", cancellationToken);
         return Results.Ok(new MessageResponse("Logged out."));
     }
 
@@ -273,4 +231,16 @@ public static class AuthEndpoints
 
     private static UserResponse MapUser(User user)
         => new(user.UserId, user.DisplayName, user.Email, user.Role, user.IsActive, user.MustChangePassword, user.PasswordChangedAtUtc, user.CreatedAtUtc, user.UpdatedAtUtc, user.LastLoginAtUtc);
+
+    private static List<(Tenant Tenant, TenantMembership Membership)> FilterVisibleMemberships(User user, IReadOnlyList<(Tenant Tenant, TenantMembership Membership)> memberships)
+    {
+        if (string.Equals(user.Role, SystemRoles.PlatformAdmin, StringComparison.OrdinalIgnoreCase))
+        {
+            return memberships.ToList();
+        }
+
+        return memberships
+            .Where(x => !string.Equals(x.Tenant.TenantId, RootTenantId, StringComparison.OrdinalIgnoreCase))
+            .ToList();
+    }
 }

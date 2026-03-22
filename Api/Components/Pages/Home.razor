@@ -3,6 +3,7 @@
 @inject ITenantService TenantService
 @inject IAuditService AuditService
 @inject AuthenticationStateProvider AuthenticationStateProvider
+@inject IConfiguration Configuration
 
 <PageTitle>AuthService</PageTitle>
 
@@ -26,7 +27,6 @@
         </div>
         <div class="actions">
             <a class="button primary" href="/manage">@(_isAuthenticated ? "Manage" : "Manage or Login")</a>
-            <a class="button secondary" href="/api/swagger" target="_blank">Swagger</a>
         </div>
     </div>
 
@@ -35,6 +35,10 @@
             <p class="eyebrow">Health</p>
             <h2>Running status</h2>
             <p><span class="tag">Healthy</span></p>
+            <div class="hero-status">
+                <span class="tag @(_isMailServiceReady ? "success" : "inactive")">Mail service @(_isMailServiceReady ? "Ready" : "Not Ready")</span>
+                <span class="muted">SendGrid is @(_isMailServiceReady ? "configured" : "not configured").</span>
+            </div>
             <p class="muted">Server time (UTC): @_nowUtc.ToString("u")</p>
         </article>
         <article class="panel stack">
@@ -93,6 +97,7 @@
 @code {
     private readonly List<AuditEvent> _events = [];
     private bool _isAuthenticated;
+    private bool _isMailServiceReady;
     private bool _loading = true;
     private DateTimeOffset _nowUtc;
     private int _tenantCount;
@@ -105,6 +110,7 @@
             _nowUtc = DateTimeOffset.UtcNow;
             var authState = await AuthenticationStateProvider.GetAuthenticationStateAsync();
             _isAuthenticated = authState.User.Identity?.IsAuthenticated == true;
+            _isMailServiceReady = !string.IsNullOrWhiteSpace(Configuration["SENDGRID_API_KEY"]);
 
             var tenants = await TenantService.ListAsync();
             var visibleTenants = tenants.Where(x => !string.Equals(x.TenantId, "root", StringComparison.OrdinalIgnoreCase)).ToList();

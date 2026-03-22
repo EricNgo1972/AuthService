@@ -10,6 +10,7 @@
 
         <nav class="nav-links">
             <NavLink href="/" Match="NavLinkMatch.All">Home</NavLink>
+            <a href="/api/swagger" target="_blank" rel="noopener noreferrer">Swagger</a>
             <AuthorizeView>
                 <Authorized Context="auth">
                     <NavLink href="/manage">Manage</NavLink>
@@ -26,7 +27,7 @@
                     {
                         <NavLink href="/admin/users" Match="NavLinkMatch.Prefix">Users</NavLink>
                     }
-                    <a href="/session/logout">Logout</a>
+                    <a href="@($"{UiSessionEndpoints.RoutePrefix}/logout")">Logout</a>
                 </Authorized>
             </AuthorizeView>
         </nav>
@@ -40,6 +41,7 @@
 </div>
 
 @code {
+    private const string RootTenantId = "root";
     private bool _canSwitchTenant;
 
     protected override async Task OnInitializedAsync()
@@ -52,6 +54,9 @@
         }
 
         var memberships = await TenantMembershipService.GetActiveMembershipsAsync(userId);
-        _canSwitchTenant = memberships.Count > 1;
+        var visibleMemberships = authState.User.HasClaim("platformadmin", "true")
+            ? memberships
+            : memberships.Where(x => !string.Equals(x.Tenant.TenantId, RootTenantId, StringComparison.OrdinalIgnoreCase)).ToList();
+        _canSwitchTenant = visibleMemberships.Count > 1;
     }
 }

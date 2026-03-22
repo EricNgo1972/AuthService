@@ -17,7 +17,7 @@ AuthService/
 
 - .NET 8 Blazor Server host with integrated `/api/*` API
 - Azure Table Storage with direct-key lookups
-- JWT access tokens and refresh token rotation
+- JWT access tokens with user-wide server-side revocation
 - Password reset flow
 - Global user identities with tenant memberships
 - `DisplayName` on users
@@ -112,17 +112,14 @@ The bootstrap user is created as a global platform admin and is also assigned as
 - If the user has multiple active tenant memberships, login returns:
   - `loginToken`
   - tenant list
-  - client must then call `POST /api/auth/select-tenant`
-
-`POST /api/auth/register` is disabled.
+  - built-in Blazor UI completes tenant selection through the host-private `/_ui/session/*` routes
+  - external clients must choose a tenant through their own login UX; there is no public `select-tenant` API
 
 ## API Surface
 
 Public endpoints:
 
 - `POST /api/auth/login`
-- `POST /api/auth/select-tenant`
-- `POST /api/auth/refresh`
 - `POST /api/auth/forgot-password`
 - `POST /api/auth/reset-password`
 
@@ -131,6 +128,13 @@ Authenticated endpoints:
 - `POST /api/auth/logout`
 - `GET /api/auth/me`
 - `POST /api/auth/change-password`
+
+Internal host-only UI routes:
+
+- `/_ui/session/login`
+- `/_ui/session/select-tenant`
+- `/_ui/session/switch-tenant`
+- `/_ui/session/logout`
 
 Tenant admin or platform admin endpoints:
 
@@ -159,6 +163,7 @@ Platform admin endpoints:
 - `/api/health` returns service health
 - `/api/swagger` serves Swagger UI
 - `/api/swagger/v1/swagger.json` serves the OpenAPI document
+- Internal `/_ui/session/*` routes are excluded from Swagger and are not part of the public API contract
 
 ## Storage Design
 
@@ -237,4 +242,5 @@ Implementation details:
 - No Entity Framework
 - No SQL database
 - Single host serves both UI and integration APIs
+- Blazor UI session endpoints are host-private and not part of the public API surface
 - Business logic is split across clean architecture layers

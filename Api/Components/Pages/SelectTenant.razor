@@ -40,7 +40,7 @@
             <div class="stack">
                 @foreach (var membership in _memberships)
                 {
-                    <form method="post" action="/session/select-tenant" class="tenant-card">
+                    <form method="post" action="@($"{UiSessionEndpoints.RoutePrefix}/select-tenant")" class="tenant-card">
                         <input type="hidden" name="loginToken" value="@Token" />
                         <input type="hidden" name="returnUrl" value="@NormalizedReturnUrl" />
                         <input type="hidden" name="tenantId" value="@membership.TenantId" />
@@ -62,6 +62,8 @@
 </section>
 
 @code {
+    private const string RootTenantId = "root";
+
     [SupplyParameterFromQuery(Name = "token")]
     public string? Token { get; set; }
 
@@ -114,7 +116,10 @@
             }
 
             var memberships = await TenantMembershipService.GetActiveMembershipsAsync(user.UserId);
-            _memberships.AddRange(memberships.Select(x => new TenantOption(x.Tenant.TenantId, x.Tenant.Name, x.Membership.Role)));
+            var visibleMemberships = string.Equals(principal.FindFirst("platformadmin")?.Value, "true", StringComparison.OrdinalIgnoreCase)
+                ? memberships
+                : memberships.Where(x => !string.Equals(x.Tenant.TenantId, RootTenantId, StringComparison.OrdinalIgnoreCase)).ToList();
+            _memberships.AddRange(visibleMemberships.Select(x => new TenantOption(x.Tenant.TenantId, x.Tenant.Name, x.Membership.Role)));
         }
         catch
         {

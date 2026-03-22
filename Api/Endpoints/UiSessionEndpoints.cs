@@ -1,24 +1,32 @@
 using System.Security.Claims;
 using AuthService.Api.Security;
 using AuthService.Application.Interfaces;
+using AuthService.Domain.Entities;
+using AuthService.Domain.Enums;
 using Microsoft.AspNetCore.Authentication;
 
 namespace AuthService.Api.Endpoints;
 
 public static class UiSessionEndpoints
 {
+    private const string RootTenantId = "root";
+    public const string RoutePrefix = "/_ui/session";
+
     public static IEndpointRouteBuilder MapUiSessionEndpoints(this IEndpointRouteBuilder app)
     {
-        app.MapPost("/session/login", LoginAsync)
+        var uiSession = app.MapGroup(RoutePrefix)
+            .ExcludeFromDescription();
+
+        uiSession.MapPost("/login", LoginAsync)
             .AllowAnonymous()
             .DisableAntiforgery();
-        app.MapPost("/session/select-tenant", SelectTenantAsync)
+        uiSession.MapPost("/select-tenant", SelectTenantAsync)
             .AllowAnonymous()
             .DisableAntiforgery();
-        app.MapPost("/session/switch-tenant", SwitchTenantAsync)
+        uiSession.MapPost("/switch-tenant", SwitchTenantAsync)
             .RequireAuthorization()
             .DisableAntiforgery();
-        app.MapGet("/session/logout", (Delegate)LogoutAsync);
+        uiSession.MapGet("/logout", (Delegate)LogoutAsync);
         return app;
     }
 
@@ -66,7 +74,7 @@ public static class UiSessionEndpoints
         }
 
         await identityService.RecordLoginSuccessAsync(user, cancellationToken);
-        var memberships = await tenantMembershipService.GetActiveMembershipsAsync(user.UserId, cancellationToken);
+        var memberships = FilterVisibleMemberships(user, await tenantMembershipService.GetActiveMembershipsAsync(user.UserId, cancellationToken));
         if (memberships.Count == 0)
         {
             await auditService.LogEventAsync("SYSTEM", user.UserId, "ui_login", "failure", ip, userAgent, "No active tenant memberships.", cancellationToken);
@@ -134,6 +142,11 @@ public static class UiSessionEndpoints
                 return Results.Redirect("/login?error=Tenant%20selection%20has%20expired.");
             }
 
+            if (!CanAccessTenant(user, tenantId))
+            {
+                return Results.Redirect("/login?error=Selected%20tenant%20is%20not%20available.");
+            }
+
             var membershipResult = await tenantMembershipService.ValidateMembershipAsync(tenantId, userId, cancellationToken);
             if (!membershipResult.Succeeded || membershipResult.Value is null)
             {
@@ -191,7 +204,7 @@ public static class UiSessionEndpoints
         var user = await identityService.GetByIdAsync(userId, cancellationToken);
         var membership = await tenantMembershipService.ValidateMembershipAsync(tenantId, userId, cancellationToken);
         var tenant = await tenantService.GetByIdAsync(tenantId, cancellationToken);
-        if (user is null || !membership.Succeeded || membership.Value is null || tenant is null)
+        if (user is null || !CanAccessTenant(user, tenantId) || !membership.Succeeded || membership.Value is null || tenant is null)
         {
             return Results.Redirect("/switch-tenant?error=Selected%20tenant%20is%20not%20available.");
         }
@@ -229,4 +242,20 @@ public static class UiSessionEndpoints
 
         return returnUrl;
     }
+
+    private static List<(Tenant Tenant, TenantMembership Membership)> FilterVisibleMemberships(User user, IReadOnlyList<(Tenant Tenant, TenantMembership Membership)> memberships)
+    {
+        if (string.Equals(user.Role, SystemRoles.PlatformAdmin, StringComparison.OrdinalIgnoreCase))
+        {
+            return memberships.ToList();
+        }
+
+        return memberships
+            .Where(x => !string.Equals(x.Tenant.TenantId, RootTenantId, StringComparison.OrdinalIgnoreCase))
+            .ToList();
+    }
+
+    private static bool CanAccessTenant(User user, string tenantId)
+        => string.Equals(user.Role, SystemRoles.PlatformAdmin, StringComparison.OrdinalIgnoreCase) ||
+           !string.Equals(tenantId, RootTenantId, StringComparison.OrdinalIgnoreCase);
 }

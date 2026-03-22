@@ -21,7 +21,7 @@
             <div class="alert success">@Message</div>
         }
 
-        <form method="post" action="/session/login" class="stack">
+        <form method="post" action="@($"{UiSessionEndpoints.RoutePrefix}/login")" class="stack">
             <input type="hidden" name="returnUrl" value="@ReturnUrl" />
             <label class="field">
                 <span>Email</span>
