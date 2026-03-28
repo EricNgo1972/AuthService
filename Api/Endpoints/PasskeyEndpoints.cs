@@ -369,7 +369,9 @@ public static class PasskeyEndpoints
     .hidden { display: none; }
     .success-card { border-color: #cde9d4; background: #f4fbf6; }
     .success-title { color: #1f6b33; }
-    .debug-log { background: #0f172a; color: #dbe7ff; border-radius: 12px; padding: 1rem; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: .82rem; white-space: pre-wrap; word-break: break-word; }
+    .busy-row { display: flex; align-items: center; gap: .75rem; }
+    .spinner { width: 1rem; height: 1rem; border: 2px solid #c7d2e5; border-top-color: #0f4fd6; border-radius: 999px; animation: spin .9s linear infinite; }
+    @keyframes spin { to { transform: rotate(360deg); } }
   </style>
 </head>
 <body>
@@ -384,7 +386,11 @@ public static class PasskeyEndpoints
         <button id="passkeyBtn">Continue with Passkey</button>
         <button id="showPasswordBtn" class="secondary" type="button">First time on this device?</button>
       </div>
-      <p id="status" class="muted">Waiting to start authentication...</p>
+      <div id="busyRow" class="busy-row hidden">
+        <span class="spinner" aria-hidden="true"></span>
+        <p id="status" class="muted">Working...</p>
+      </div>
+      <p id="idleStatus" class="muted">Choose passkey sign-in or first-time registration on this phone.</p>
     </div>
 
     <form id="bootstrapForm" class="card stack hidden">
@@ -416,20 +422,14 @@ public static class PasskeyEndpoints
       </div>
     </section>
 
-    <section class="card stack">
-      <div>
-        <h2>Debug Log</h2>
-        <p class="muted">Temporary diagnostics for phone sign-in flow.</p>
-      </div>
-      <div id="debugLog" class="debug-log">Debug log started.</div>
-    </section>
   </main>
   <script>
     const rid = "{{encodedRequestId}}";
     const statusEl = document.getElementById('status');
+    const idleStatusEl = document.getElementById('idleStatus');
+    const busyRowEl = document.getElementById('busyRow');
     const bootstrapForm = document.getElementById('bootstrapForm');
     const successCard = document.getElementById('successCard');
-    const debugLogEl = document.getElementById('debugLog');
     const passkeyBtn = document.getElementById('passkeyBtn');
     const showPasswordBtn = document.getElementById('showPasswordBtn');
     const cancelPasswordBtn = document.getElementById('cancelPasswordBtn');
@@ -486,19 +486,17 @@ public static class PasskeyEndpoints
     const hideBootstrap = () => bootstrapForm.classList.add('hidden');
     const showSuccess = () => successCard.classList.remove('hidden');
     const hideSuccess = () => successCard.classList.add('hidden');
-    const setStatus = (message) => statusEl.textContent = message;
-    const logDebug = (message, data) => {
-      const timestamp = new Date().toLocaleTimeString();
-      const detail = data === undefined ? '' : `\n${typeof data === 'string' ? data : JSON.stringify(data, null, 2)}`;
-      debugLogEl.textContent = `[${timestamp}] ${message}${detail}\n\n` + debugLogEl.textContent;
+    const setStatus = (message, isBusy = false) => {
+      statusEl.textContent = message;
+      busyRowEl.classList.toggle('hidden', !isBusy);
+      idleStatusEl.classList.toggle('hidden', isBusy);
     };
     const tryClosePage = () => {
-      logDebug('Attempting to close page.');
       window.close();
       setTimeout(() => {
         if (!document.hidden) {
-          setStatus('Your phone sign-in is ok. Go back to your app.');
-          logDebug('Browser kept the page open after close attempt.');
+          busyRowEl.classList.add('hidden');
+          idleStatusEl.classList.add('hidden');
         }
       }, 250);
     };
@@ -506,57 +504,48 @@ public static class PasskeyEndpoints
     function finishPhoneLogin() {
       hideBootstrap();
       showSuccess();
-      setStatus('Your phone sign-in is ok. Go back to your app.');
-      logDebug('Phone sign-in completed successfully.');
+      busyRowEl.classList.add('hidden');
+      idleStatusEl.classList.add('hidden');
       setTimeout(tryClosePage, 600);
     }
 
     async function fetchRequest() {
-      logDebug('Fetching login request.', { requestId: rid });
       const response = await fetch(`/api/passkey/login/request/${encodeURIComponent(rid)}`);
       if (!response.ok) {
-        logDebug('Login request fetch failed.', { status: response.status });
         throw new Error('Login request is invalid or expired.');
       }
-      const payload = await response.json();
-      logDebug('Login request fetched.', payload);
-      return payload;
+      return await response.json();
     }
 
     async function usePasskey() {
-      setStatus('Waiting for biometric verification...');
-      logDebug('Starting passkey flow.');
+      setStatus('Waiting for biometric verification...', true);
       const request = await fetchRequest();
       if (request.status === 'Expired') {
-        setStatus('This login request has expired.');
-        logDebug('Login request already expired.');
+        setStatus('This login request has expired.', false);
         return;
       }
       if (request.status === 'AwaitingBootstrap') {
         showBootstrap();
-        setStatus('Finish signing in with your password to register a passkey on this phone.');
-        logDebug('Request is waiting for bootstrap. Showing password form.');
+        setStatus('Finish signing in with your password to register a passkey on this phone.', false);
         return;
       }
 
       try {
-        logDebug('Calling navigator.credentials.get.');
+        setStatus('Authenticating on this phone...', true);
         const credential = await navigator.credentials.get({ publicKey: mapAssertionRequest(request.publicKey) });
-        logDebug('Passkey credential selected.', { credentialId: credential.id, type: credential.type });
+        setStatus('Verifying your phone sign-in...', true);
         const complete = await fetch('/api/passkey/login/complete', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ requestId: rid, assertionResponseJson: JSON.stringify(mapAssertionResponse(credential)) })
         });
         const payload = await complete.json();
-        logDebug('Passkey completion response received.', payload);
         if (!complete.ok) {
           const serverMessage = payload.message || 'Passkey login failed.';
           if (serverMessage.toLowerCase().includes('unknown credential')) {
             hideSuccess();
             showBootstrap();
-            setStatus('No passkey is registered on this phone yet. Sign in once with your password to register it.');
-            logDebug('Server reported unknown credential. Switching to bootstrap.');
+            setStatus('No passkey is registered on this phone yet. Sign in once with your password to register it.', false);
             return;
           }
 
@@ -566,15 +555,13 @@ public static class PasskeyEndpoints
       } catch (error) {
         hideSuccess();
         showBootstrap();
-        setStatus(error?.message || 'Passkey login was not completed. Use password registration if this is your first time.');
-        logDebug('Passkey flow threw an error.', error?.message || String(error));
+        setStatus(error?.message || 'Passkey login was not completed. Use password registration if this is your first time.', false);
       }
     }
 
     async function bootstrap(event) {
       event.preventDefault();
-      setStatus('Validating password...');
-      logDebug('Starting bootstrap flow.', { email: emailEl.value });
+      setStatus('Validating your password...', true);
       const start = await fetch('/api/passkey/bootstrap/start', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -585,21 +572,18 @@ public static class PasskeyEndpoints
         })
       });
       const startPayload = await start.json();
-      logDebug('Bootstrap start response received.', startPayload);
       if (!start.ok) {
         hideSuccess();
-        setStatus(startPayload.message || 'Password sign-in failed.');
-        logDebug('Bootstrap start failed.');
+        setStatus(startPayload.message || 'Password sign-in failed.', false);
         return;
       }
 
-      setStatus('Creating passkey...');
-      logDebug('Calling navigator.credentials.create.');
+      setStatus('Creating a passkey on this phone...', true);
       const credential = await navigator.credentials.create({
         publicKey: mapAttestationRequest(startPayload.publicKey)
       });
-      logDebug('Passkey credential created.', { credentialId: credential.id, type: credential.type });
 
+      setStatus('Saving your phone sign-in...', true);
       const finish = await fetch('/api/passkey/bootstrap/finish', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -609,28 +593,25 @@ public static class PasskeyEndpoints
         })
       });
       const finishPayload = await finish.json();
-      logDebug('Bootstrap finish response received.', finishPayload);
       if (!finish.ok) {
         hideSuccess();
-        setStatus(finishPayload.message || 'Passkey registration failed.');
-        logDebug('Bootstrap finish failed.');
+        setStatus(finishPayload.message || 'Passkey registration failed.', false);
         return;
       }
 
       finishPhoneLogin();
     }
 
-    passkeyBtn.addEventListener('click', () => usePasskey().catch(error => { setStatus(error?.message || 'Passkey login failed.'); logDebug('Passkey button flow failed.', error?.message || String(error)); }));
-    showPasswordBtn.addEventListener('click', () => { hideSuccess(); showBootstrap(); setStatus('Sign in once to register a passkey on this phone.'); logDebug('User opened bootstrap form manually.'); });
-    cancelPasswordBtn.addEventListener('click', () => { hideBootstrap(); hideSuccess(); setStatus('Waiting for biometric verification...'); logDebug('User cancelled bootstrap form.'); });
+    passkeyBtn.addEventListener('click', () => usePasskey().catch(error => setStatus(error?.message || 'Passkey login failed.', false)));
+    showPasswordBtn.addEventListener('click', () => { hideSuccess(); showBootstrap(); setStatus('Sign in once to register a passkey on this phone.', false); });
+    cancelPasswordBtn.addEventListener('click', () => { hideBootstrap(); hideSuccess(); setStatus('Choose passkey sign-in or first-time registration on this phone.', false); });
     closePageBtn.addEventListener('click', () => tryClosePage());
-    bootstrapForm.addEventListener('submit', (event) => bootstrap(event).catch(error => { setStatus(error?.message || 'Passkey registration failed.'); logDebug('Bootstrap flow failed.', error?.message || String(error)); }));
+    bootstrapForm.addEventListener('submit', (event) => bootstrap(event).catch(error => setStatus(error?.message || 'Passkey registration failed.', false)));
 
     usePasskey().catch(error => {
       hideSuccess();
       showBootstrap();
-      setStatus(error?.message || 'Passkey login failed. Use password registration if needed.');
-      logDebug('Initial auto-passkey attempt failed.', error?.message || String(error));
+      setStatus(error?.message || 'Passkey login failed. Use password registration if needed.', false);
     });
   </script>
 </body>
