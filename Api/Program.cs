@@ -9,11 +9,31 @@ using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.OpenApi.Models;
 
 using System.Security.Claims;
+using Microsoft.Extensions.Configuration;
 
 const string UiCookieScheme = UiPrincipalFactory.SchemeName;
 const string CombinedScheme = "CombinedAuth";
 
 var builder = WebApplication.CreateBuilder(args);
+
+static string? GetNonEmptyConfigValue(IConfiguration configuration, string key)
+{
+    if (configuration is IConfigurationRoot root)
+    {
+        foreach (var provider in root.Providers.Reverse())
+        {
+            if (provider.TryGet(key, out var candidate) && !string.IsNullOrWhiteSpace(candidate))
+            {
+                return candidate.Trim();
+            }
+        }
+
+        return null;
+    }
+
+    var value = configuration[key];
+    return string.IsNullOrWhiteSpace(value) ? null : value.Trim();
+}
 
 
 builder.Host.UseWindowsService();
@@ -71,12 +91,16 @@ builder.Services.AddAuthorization(options =>
 });
 
 var passkeySection = builder.Configuration.GetSection("Passkey");
-var passkeyRpId = passkeySection["RpId"] ?? throw new InvalidOperationException("Passkey:RpId is required.");
-var passkeyServerName = passkeySection["ServerName"] ?? "Phoebus Auth";
-var passkeyOrigins = passkeySection.GetSection("Origins").Get<string[]>() ?? [];
+var passkeyRpId = GetNonEmptyConfigValue(builder.Configuration, "Passkey:RpId")
+    ?? throw new InvalidOperationException("Passkey:RpId is required.");
+var passkeyServerName = GetNonEmptyConfigValue(builder.Configuration, "Passkey:ServerName") ?? "Phoebus Auth";
+var passkeyOrigins = passkeySection.GetSection("Origins").Get<string[]>()?
+    .Where(x => !string.IsNullOrWhiteSpace(x))
+    .Select(x => x.Trim())
+    .ToArray() ?? [];
 if (passkeyOrigins.Length == 0)
 {
-    throw new InvalidOperationException("Passkey:Origins must contain at least one origin.");
+    passkeyOrigins = [$"https://{passkeyRpId}"];
 }
 
 builder.Services.AddSingleton<IFido2>(_ => new Fido2(new Fido2Configuration

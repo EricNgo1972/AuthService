@@ -26,6 +26,8 @@ AuthService/
 - Built-in dark-mode UI for account, tenant, and user management
 - UI tenant switching for multi-tenant users
 - Login with automatic tenant selection when only one tenant is available
+- Built-in QR login for the hosted UI using phone biometric approval
+- External QR + polling passkey flow with first-time phone bootstrap
 - SendGrid email notifications for account creation, tenant assignment, password change, and password reset
 - Custom secret provider with environment-variable-first fallback
 - Swagger UI
@@ -49,6 +51,9 @@ Important app settings:
 - `Jwt:Audience`
 - `Jwt:AccessTokenMinutes`
 - `Jwt:RefreshTokenDays`
+- `Passkey:RpId`
+- `Passkey:ServerName`
+- `Passkey:Origins`
 - `Security:PasswordHashIterations`
 - `BootstrapAdmin:Enabled`
 - `BootstrapAdmin:TenantId`
@@ -87,6 +92,8 @@ The bootstrap user is created as a global platform admin and is also assigned as
 - `/` public health and system dashboard
 - `/manage` role-based entry point for authenticated management
 - `/login`
+- `/passkey-login`
+- `/passkey-login/preview`
 - `/select-tenant`
 - `/switch-tenant`
 - `/forgot-password`
@@ -115,6 +122,39 @@ The bootstrap user is created as a global platform admin and is also assigned as
   - built-in Blazor UI completes tenant selection through the host-private `/_ui/session/*` routes
   - external clients must choose a tenant through their own login UX; there is no public `select-tenant` API
 
+## Phone Biometric Login
+
+The hosted UI can sign in with a phone:
+
+- `/login` exposes `Log with your phone`
+- the page creates an internal passkey login request
+- the UI shows a QR code
+- the phone opens `/passkey-login?rid=...`
+- returning users approve with passkey biometric
+- first-time phone users can sign in once with email/password, register a passkey, and then approve the same request
+- the desktop page completes the existing UI cookie flow through `/_ui/session/passkey-complete`
+
+This path is for the hosted AuthService UI itself. External apps should use the external polling contract below instead of the host-private UI session routes.
+
+## External Phone-Biometric Contract
+
+External apps can use AuthService as a biometric identity provider without reading Azure Tables directly:
+
+1. `POST /api/passkey/external/request`
+2. show the returned `qrUrl`
+3. phone opens `/passkey-login?rid=...`
+4. app polls `GET /api/passkey/external/status/{requestId}`
+5. when approved, exchange the one-time `authCode` through `POST /api/passkey/external/exchange`
+
+Important behavior:
+
+- polling returns status plus one-time `authCode`, not JWT directly
+- `authCode` is short-lived and one-time use
+- exchange uses the existing token generator
+- single-tenant users receive an access token
+- multi-tenant users receive the existing pre-tenant `loginToken`
+- business approvals should stay in the business app; AuthService should only provide biometric identity proof
+
 ## API Surface
 
 Public endpoints:
@@ -122,16 +162,31 @@ Public endpoints:
 - `POST /api/auth/login`
 - `POST /api/auth/forgot-password`
 - `POST /api/auth/reset-password`
+- `POST /api/passkey/external/request`
+- `GET /api/passkey/external/status/{id}`
+- `POST /api/passkey/external/exchange`
+- `GET /passkey-login`
+- `GET /passkey-login/preview`
 
 Authenticated endpoints:
 
 - `POST /api/auth/logout`
 - `GET /api/auth/me`
 - `POST /api/auth/change-password`
+- `POST /api/passkey/register/start`
+- `POST /api/passkey/register/finish`
+
+Anonymous passkey support endpoints:
+
+- `GET /api/passkey/login/request/{id}`
+- `POST /api/passkey/login/complete`
+- `POST /api/passkey/bootstrap/start`
+- `POST /api/passkey/bootstrap/finish`
 
 Internal host-only UI routes:
 
 - `/_ui/session/login`
+- `/_ui/session/passkey-complete`
 - `/_ui/session/select-tenant`
 - `/_ui/session/switch-tenant`
 - `/_ui/session/logout`
@@ -202,6 +257,13 @@ Azure Table Storage tables:
 - `AuditLogs`
   - `PartitionKey = TenantId`
   - `RowKey = TimestampBasedId`
+- `PasskeyCredentials`
+  - `PartitionKey = "CRED"`
+  - `RowKey = CredentialId`
+- `LoginRequests`
+  - `PartitionKey = "LOGIN"`
+  - `RowKey = RequestId`
+  - stores request mode, request status, passkey assertion challenge, optional registration options, optional one-time auth code, expiry, and consumed state
 
 ## Authorization Model
 
@@ -219,6 +281,7 @@ Azure Table Storage tables:
   - `membershipid`
   - `jti`
 - Login token includes `pretenant=true` and is used only for tenant selection
+- Phone biometric exchange for multi-tenant users returns the same `loginToken` model instead of selecting a tenant publicly
 
 ## Email Notifications
 
@@ -243,4 +306,6 @@ Implementation details:
 - No SQL database
 - Single host serves both UI and integration APIs
 - Blazor UI session endpoints are host-private and not part of the public API surface
+- External apps should poll AuthService, not Azure Table Storage directly
+- Business task approval should remain in the business app; AuthService is the biometric identity provider
 - Business logic is split across clean architecture layers
