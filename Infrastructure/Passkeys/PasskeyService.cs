@@ -16,7 +16,7 @@ public sealed class PasskeyService(IFido2 fido2, IClock clock, TableStorageConte
     private const string CredentialPartitionKey = "CRED";
     private const string LoginPartitionKey = "LOGIN";
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
-    private static readonly TimeSpan RequestLifetime = TimeSpan.FromSeconds(90);
+    private static readonly TimeSpan RequestLifetime = TimeSpan.FromMinutes(5);
     private static readonly TimeSpan AuthCodeLifetime = TimeSpan.FromSeconds(60);
 
     public Task<PasskeyRegistrationStartResult> StartRegistrationAsync(string userId, string userName, CancellationToken cancellationToken = default)
