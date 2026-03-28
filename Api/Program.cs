@@ -1,6 +1,7 @@
 using AuthService.Api.Components;
 using AuthService.Api.Endpoints;
 using AuthService.Api.Security;
+using Fido2NetLib;
 using AuthService.Infrastructure;
 using AuthService.Infrastructure.Security;
 
@@ -69,6 +70,22 @@ builder.Services.AddAuthorization(options =>
         context.User.HasClaim(ClaimTypes.Role, "Admin")));
 });
 
+var passkeySection = builder.Configuration.GetSection("Passkey");
+var passkeyRpId = passkeySection["RpId"] ?? throw new InvalidOperationException("Passkey:RpId is required.");
+var passkeyServerName = passkeySection["ServerName"] ?? "Phoebus Auth";
+var passkeyOrigins = passkeySection.GetSection("Origins").Get<string[]>() ?? [];
+if (passkeyOrigins.Length == 0)
+{
+    throw new InvalidOperationException("Passkey:Origins must contain at least one origin.");
+}
+
+builder.Services.AddSingleton<IFido2>(_ => new Fido2(new Fido2Configuration
+{
+    ServerDomain = passkeyRpId,
+    ServerName = passkeyServerName,
+    Origins = new HashSet<string>(passkeyOrigins, StringComparer.OrdinalIgnoreCase)
+}));
+
 builder.Services.AddInfrastructure(builder.Configuration);
 
 builder.Services
@@ -136,6 +153,12 @@ var api = app.MapGroup("/api");
 api.MapAuthEndpoints();
 api.MapAdminEndpoints();
 api.MapPlatformEndpoints();
+api.MapPasskeyEndpoints();
+app.MapPasskeyLoginPage();
+app.MapPasskeyLoginPreviewPage();
+app.MapPasskeyQrPage();
+app.MapPasskeyQrImage();
+app.MapPasskeyTestPage();
 
 app.MapUiSessionEndpoints();
 app.MapRazorComponents<App>()

@@ -146,3 +146,36 @@ public sealed class AuditEventEntity : ITableEntity
     public string? UserAgent { get; set; }
     public string? Details { get; set; }
 }
+
+public sealed class PasskeyCredentialEntity : ITableEntity
+{
+    public string PartitionKey { get; set; } = string.Empty;
+    public string RowKey { get; set; } = string.Empty;
+    public DateTimeOffset? Timestamp { get; set; }
+    public ETag ETag { get; set; }
+    public string UserId { get; set; } = string.Empty;
+    public string PublicKey { get; set; } = string.Empty;
+    public long SignCount { get; set; }
+    public DateTimeOffset CreatedAtUtc { get; set; }
+}
+
+public sealed class LoginRequestEntity : ITableEntity
+{
+    public string PartitionKey { get; set; } = string.Empty;
+    public string RowKey { get; set; } = string.Empty;
+    public DateTimeOffset? Timestamp { get; set; }
+    public ETag ETag { get; set; }
+    public string RequestMode { get; set; } = string.Empty;
+    public string? ClientApp { get; set; }
+    public string Challenge { get; set; } = string.Empty;
+    public string Status { get; set; } = string.Empty;
+    public string? UserId { get; set; }
+    public DateTimeOffset ExpiresAtUtc { get; set; }
+    public string? TenantId { get; set; }
+    public string OptionsJson { get; set; } = string.Empty;
+    public string? RegistrationOptionsJson { get; set; }
+    public string? AuthCode { get; set; }
+    public DateTimeOffset? AuthCodeExpiresAtUtc { get; set; }
+    public DateTimeOffset? ConsumedAtUtc { get; set; }
+    public string? FailureReason { get; set; }
+}

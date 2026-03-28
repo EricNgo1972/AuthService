@@ -20,6 +20,9 @@ public static class UiSessionEndpoints
         uiSession.MapPost("/login", LoginAsync)
             .AllowAnonymous()
             .DisableAntiforgery();
+        uiSession.MapGet("/passkey-complete", CompletePasskeyLoginAsync)
+            .AllowAnonymous()
+            .DisableAntiforgery();
         uiSession.MapPost("/select-tenant", SelectTenantAsync)
             .AllowAnonymous()
             .DisableAntiforgery();
@@ -183,6 +186,68 @@ public static class UiSessionEndpoints
         return Results.Redirect("/login");
     }
 
+    private static async Task<IResult> CompletePasskeyLoginAsync(
+        HttpContext httpContext,
+        string rid,
+        string? returnUrl,
+        IPasskeyService passkeyService,
+        IIdentityService identityService,
+        ITenantMembershipService tenantMembershipService,
+        ITenantService tenantService,
+        ITokenService tokenService,
+        IAuditService auditService,
+        UiPrincipalFactory principalFactory,
+        CancellationToken cancellationToken)
+    {
+        var normalizedReturnUrl = NormalizeReturnUrl(returnUrl);
+        var request = await passkeyService.GetLoginRequestAsync(rid, cancellationToken);
+        if (request is null ||
+            request.Mode != PasskeyRequestMode.InternalUi ||
+            !string.Equals(request.Status, PasskeyRequestStatuses.Approved, StringComparison.OrdinalIgnoreCase) ||
+            string.IsNullOrWhiteSpace(request.UserId))
+        {
+            return RedirectToLogin("Passkey login is not ready.", normalizedReturnUrl);
+        }
+
+        var user = await identityService.GetByIdAsync(request.UserId, cancellationToken);
+        if (user is null || !user.IsActive)
+        {
+            return RedirectToLogin("Passkey login has expired.", normalizedReturnUrl);
+        }
+
+        await identityService.RecordLoginSuccessAsync(user, cancellationToken);
+        var memberships = FilterVisibleMemberships(user, await tenantMembershipService.GetActiveMembershipsAsync(user.UserId, cancellationToken));
+        if (memberships.Count == 0)
+        {
+            await auditService.LogEventAsync("SYSTEM", user.UserId, "ui_passkey_login", "failure", httpContext.Connection.RemoteIpAddress?.ToString(), httpContext.Request.Headers.UserAgent.ToString(), "No active tenant memberships.", cancellationToken);
+            return RedirectToLogin("No active tenant membership is available for this account.", normalizedReturnUrl);
+        }
+
+        if (!string.IsNullOrWhiteSpace(request.TenantId))
+        {
+            var membershipResult = await tenantMembershipService.ValidateMembershipAsync(request.TenantId, user.UserId, cancellationToken);
+            var tenant = await tenantService.GetByIdAsync(request.TenantId, cancellationToken);
+            if (membershipResult.Succeeded && membershipResult.Value is not null && tenant is not null && CanAccessTenant(user, tenant.TenantId))
+            {
+                await SignInUiAsync(httpContext, principalFactory, user, tenant, membershipResult.Value);
+                await auditService.LogEventAsync(tenant.TenantId, user.UserId, "ui_passkey_login", "success", httpContext.Connection.RemoteIpAddress?.ToString(), httpContext.Request.Headers.UserAgent.ToString(), "Tenant requested during passkey login.", cancellationToken);
+                return Results.Redirect(normalizedReturnUrl);
+            }
+        }
+
+        if (memberships.Count == 1)
+        {
+            var membership = memberships[0];
+            await SignInUiAsync(httpContext, principalFactory, user, membership.Tenant, membership.Membership);
+            await auditService.LogEventAsync(membership.Tenant.TenantId, user.UserId, "ui_passkey_login", "success", httpContext.Connection.RemoteIpAddress?.ToString(), httpContext.Request.Headers.UserAgent.ToString(), "Single-tenant passkey login auto-selected tenant.", cancellationToken);
+            return Results.Redirect(normalizedReturnUrl);
+        }
+
+        var loginToken = await tokenService.GenerateLoginTokenAsync(user, cancellationToken);
+        await auditService.LogEventAsync("SYSTEM", user.UserId, "ui_passkey_login", "success", httpContext.Connection.RemoteIpAddress?.ToString(), httpContext.Request.Headers.UserAgent.ToString(), "Tenant selection required after passkey login.", cancellationToken);
+        return Results.Redirect($"/select-tenant?token={Uri.EscapeDataString(loginToken.Token)}&returnUrl={Uri.EscapeDataString(normalizedReturnUrl)}");
+    }
+
     private static async Task<IResult> SwitchTenantAsync(
         HttpContext httpContext,
         ITenantMembershipService tenantMembershipService,
@@ -224,6 +289,16 @@ public static class UiSessionEndpoints
 
     private static IResult RedirectToLogin(string error, string returnUrl)
         => Results.Redirect($"/login?error={Uri.EscapeDataString(error)}&returnUrl={Uri.EscapeDataString(returnUrl)}");
+
+    private static Task SignInUiAsync(HttpContext httpContext, UiPrincipalFactory principalFactory, User user, Tenant tenant, TenantMembership membership)
+        => httpContext.SignInAsync(
+            UiPrincipalFactory.SchemeName,
+            principalFactory.Create(user, tenant, membership),
+            new AuthenticationProperties
+            {
+                IsPersistent = true,
+                ExpiresUtc = DateTimeOffset.UtcNow.AddHours(12)
+            });
 
     private static string NormalizeReturnUrl(string? returnUrl)
     {

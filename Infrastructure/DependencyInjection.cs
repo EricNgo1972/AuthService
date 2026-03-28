@@ -3,6 +3,7 @@ using AuthService.Application.Services;
 using AuthService.Infrastructure.Email;
 using AuthService.Infrastructure.KeyVault;
 using AuthService.Infrastructure.Migration;
+using AuthService.Infrastructure.Passkeys;
 using AuthService.Infrastructure.Repositories;
 using AuthService.Infrastructure.Security;
 using AuthService.Infrastructure.Storage;
@@ -48,6 +49,7 @@ public static class DependencyInjection
         services.AddScoped<ISessionService, SessionService>();
         services.AddScoped<IPasswordResetService, PasswordResetService>();
         services.AddScoped<IAuditService, AuditService>();
+        services.AddScoped<IPasskeyService, PasskeyService>();
         return services;
     }
 }

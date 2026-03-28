@@ -13,4 +13,6 @@ public sealed class TableNames
     public const string PasswordReset = "PasswordReset";
     public const string PasswordResetIndex = "PasswordResetIndex";
     public const string AuditLogs = "AuditLogs";
+    public const string PasskeyCredentials = "PasskeyCredentials";
+    public const string LoginRequests = "LoginRequests";
 }

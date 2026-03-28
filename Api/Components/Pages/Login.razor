@@ -2,6 +2,8 @@
 @attribute [AllowAnonymous]
 @inject NavigationManager NavigationManager
 @inject AuthenticationStateProvider AuthenticationStateProvider
+@inject IPasskeyService PasskeyService
+@implements IAsyncDisposable
 
 <PageTitle>Login</PageTitle>
 
@@ -9,7 +11,7 @@
     <div class="panel stack">
         <p class="eyebrow">Sign In</p>
         <h1>Access the admin console</h1>
-        <p class="muted">Login with your global email and password. Single-tenant users go straight in. Multi-tenant users select a tenant next.</p>
+        <p class="muted">Login with your global email and password, or sign in using your phone biometric. Single-tenant users go straight in. Multi-tenant users select a tenant next.</p>
 
         @if (!string.IsNullOrWhiteSpace(Error))
         {
@@ -36,8 +38,24 @@
 
         <div class="inline-links">
             <a href="/forgot-password">Forgot password</a>
-            <a href="/api/swagger" target="_blank">Swagger</a>
+            <button type="button" class="link-button" @onclick="TogglePasskeyAsync">Log with your phone</button>
         </div>
+
+        @if (ShowPasskeyQr && !string.IsNullOrWhiteSpace(PasskeyRequestId))
+        {
+            <div class="passkey-panel stack">
+                <div class="passkey-panel-header">
+                    <div>
+                        <p class="eyebrow">Phone Login</p>
+                        <h2>Scan with your phone</h2>
+                    </div>
+                    <button type="button" class="button secondary" @onclick="HidePasskeyAsync">Close</button>
+                </div>
+                <p class="muted">Open your phone camera, scan the QR code, and approve the biometric prompt on your phone. This screen will finish the login automatically.</p>
+                <img class="passkey-qr" src="@PasskeyQrImageUrl" alt="Passkey login QR code" />
+                <div class="passkey-status">@PasskeyStatus</div>
+            </div>
+        }
     </div>
 </section>
 
@@ -51,6 +69,12 @@
     [SupplyParameterFromQuery]
     public string? ReturnUrl { get; set; }
 
+    private bool ShowPasskeyQr { get; set; }
+    private string? PasskeyRequestId { get; set; }
+    private string? PasskeyQrImageUrl { get; set; }
+    private string PasskeyStatus { get; set; } = string.Empty;
+    private CancellationTokenSource? _passkeyPollingCts;
+
     protected override async Task OnInitializedAsync()
     {
         var authState = await AuthenticationStateProvider.GetAuthenticationStateAsync();
@@ -62,6 +86,92 @@
         ReturnUrl = NormalizeReturnUrl(ReturnUrl);
     }
 
+    private async Task TogglePasskeyAsync()
+    {
+        if (ShowPasskeyQr)
+        {
+            await HidePasskeyAsync();
+            return;
+        }
+
+        await StartPasskeyAsync();
+    }
+
+    private async Task StartPasskeyAsync()
+    {
+        await HidePasskeyAsync();
+        var request = await PasskeyService.CreateLoginRequestAsync(null, AuthService.Application.Interfaces.PasskeyRequestMode.InternalUi);
+        PasskeyRequestId = request.RequestId;
+        PasskeyQrImageUrl = $"/passkey/qr/image?rid={Uri.EscapeDataString(request.RequestId)}";
+        PasskeyStatus = $"Waiting for approval. Expires at {request.ExpiresAtUtc.LocalDateTime:t}.";
+        ShowPasskeyQr = true;
+
+        _passkeyPollingCts = new CancellationTokenSource();
+        _ = PollPasskeyStatusAsync(request.RequestId, _passkeyPollingCts.Token);
+    }
+
+    private async Task HidePasskeyAsync()
+    {
+        if (_passkeyPollingCts is not null)
+        {
+            await _passkeyPollingCts.CancelAsync();
+            _passkeyPollingCts.Dispose();
+            _passkeyPollingCts = null;
+        }
+
+        ShowPasskeyQr = false;
+        PasskeyRequestId = null;
+        PasskeyQrImageUrl = null;
+        PasskeyStatus = string.Empty;
+    }
+
+    private async Task PollPasskeyStatusAsync(string requestId, CancellationToken cancellationToken)
+    {
+        try
+        {
+            while (!cancellationToken.IsCancellationRequested)
+            {
+                var request = await PasskeyService.GetLoginRequestAsync(requestId, cancellationToken);
+                if (request is null)
+                {
+                    await InvokeAsync(() =>
+                    {
+                        PasskeyStatus = "Passkey login request was not found.";
+                        StateHasChanged();
+                    });
+                    return;
+                }
+
+                if (string.Equals(request.Status, "Approved", StringComparison.OrdinalIgnoreCase))
+                {
+                    await InvokeAsync(() => NavigationManager.NavigateTo($"{UiSessionEndpoints.RoutePrefix}/passkey-complete?rid={Uri.EscapeDataString(requestId)}&returnUrl={Uri.EscapeDataString(ReturnUrl ?? "/manage")}", true));
+                    return;
+                }
+
+                if (string.Equals(request.Status, "Expired", StringComparison.OrdinalIgnoreCase))
+                {
+                    await InvokeAsync(() =>
+                    {
+                        PasskeyStatus = "Passkey login request expired. Generate a new QR code.";
+                        StateHasChanged();
+                    });
+                    return;
+                }
+
+                await InvokeAsync(() =>
+                {
+                    PasskeyStatus = $"Waiting for approval. Expires at {request.ExpiresAtUtc.LocalDateTime:t}.";
+                    StateHasChanged();
+                });
+
+                await Task.Delay(TimeSpan.FromSeconds(2), cancellationToken);
+            }
+        }
+        catch (OperationCanceledException)
+        {
+        }
+    }
+
     private static string NormalizeReturnUrl(string? value)
     {
         if (string.IsNullOrWhiteSpace(value) || !value.StartsWith('/') || value.StartsWith("//", StringComparison.Ordinal))
@@ -70,5 +180,15 @@
         }
 
         return value;
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        if (_passkeyPollingCts is not null)
+        {
+            await _passkeyPollingCts.CancelAsync();
+            _passkeyPollingCts.Dispose();
+            _passkeyPollingCts = null;
+        }
     }
 }
