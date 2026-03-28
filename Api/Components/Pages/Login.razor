@@ -56,6 +56,15 @@
                 <div class="passkey-status">@PasskeyStatus</div>
             </div>
         }
+
+        <div class="passkey-panel stack">
+            <div>
+                <p class="eyebrow">Debug</p>
+                <h2>Desktop Log</h2>
+            </div>
+            <p class="muted">Temporary diagnostics for QR login on the desktop page.</p>
+            <div class="debug-log">@DesktopDebugLog</div>
+        </div>
     </div>
 </section>
 
@@ -73,6 +82,7 @@
     private string? PasskeyRequestId { get; set; }
     private string? PasskeyQrImageUrl { get; set; }
     private string PasskeyStatus { get; set; } = string.Empty;
+    private string DesktopDebugLog { get; set; } = "Debug log started.";
     private CancellationTokenSource? _passkeyPollingCts;
 
     protected override async Task OnInitializedAsync()
@@ -100,11 +110,13 @@
     private async Task StartPasskeyAsync()
     {
         await HidePasskeyAsync();
+        AppendDebug("Creating internal phone-login request.");
         var request = await PasskeyService.CreateLoginRequestAsync(null, AuthService.Application.Interfaces.PasskeyRequestMode.InternalUi);
         PasskeyRequestId = request.RequestId;
         PasskeyQrImageUrl = $"/passkey/qr/image?rid={Uri.EscapeDataString(request.RequestId)}";
         PasskeyStatus = $"Waiting for approval. Expires at {request.ExpiresAtUtc.LocalDateTime:t}.";
         ShowPasskeyQr = true;
+        AppendDebug($"Phone-login request created. RequestId={request.RequestId}, ExpiresAt={request.ExpiresAtUtc:O}");
 
         _passkeyPollingCts = new CancellationTokenSource();
         _ = PollPasskeyStatusAsync(request.RequestId, _passkeyPollingCts.Token);
@@ -123,6 +135,7 @@
         PasskeyRequestId = null;
         PasskeyQrImageUrl = null;
         PasskeyStatus = string.Empty;
+        AppendDebug("QR panel hidden and polling cancelled.");
     }
 
     private async Task PollPasskeyStatusAsync(string requestId, CancellationToken cancellationToken)
@@ -131,19 +144,24 @@
         {
             while (!cancellationToken.IsCancellationRequested)
             {
+                AppendDebug($"Polling request status. RequestId={requestId}");
                 var request = await PasskeyService.GetLoginRequestAsync(requestId, cancellationToken);
                 if (request is null)
                 {
                     await InvokeAsync(() =>
                     {
                         PasskeyStatus = "Passkey login request was not found.";
+                        AppendDebug("Poll result: request not found.");
                         StateHasChanged();
                     });
                     return;
                 }
 
+                AppendDebug($"Poll result: Status={request.Status}, ExpiresAt={request.ExpiresAtUtc:O}, UserId={request.UserId ?? "(null)"}");
+
                 if (string.Equals(request.Status, "Approved", StringComparison.OrdinalIgnoreCase))
                 {
+                    AppendDebug("Request approved. Redirecting to UI session completion route.");
                     await InvokeAsync(() => NavigationManager.NavigateTo($"{UiSessionEndpoints.RoutePrefix}/passkey-complete?rid={Uri.EscapeDataString(requestId)}&returnUrl={Uri.EscapeDataString(ReturnUrl ?? "/manage")}", true));
                     return;
                 }
@@ -153,6 +171,7 @@
                     await InvokeAsync(() =>
                     {
                         PasskeyStatus = "Passkey login request expired. Generate a new QR code.";
+                        AppendDebug("Poll result: request expired.");
                         StateHasChanged();
                     });
                     return;
@@ -169,7 +188,23 @@
         }
         catch (OperationCanceledException)
         {
+            AppendDebug("Polling cancelled.");
         }
+        catch (Exception ex)
+        {
+            await InvokeAsync(() =>
+            {
+                AppendDebug($"Polling failed: {ex.Message}");
+                PasskeyStatus = $"Phone-login polling failed: {ex.Message}";
+                StateHasChanged();
+            });
+        }
+    }
+
+    private void AppendDebug(string message)
+    {
+        var timestamp = DateTimeOffset.Now.ToString("HH:mm:ss");
+        DesktopDebugLog = $"[{timestamp}] {message}\n\n{DesktopDebugLog}";
     }
 
     private static string NormalizeReturnUrl(string? value)

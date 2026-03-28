@@ -302,6 +302,21 @@ button.secondary {
     color: var(--muted);
 }
 
+.debug-log {
+    max-height: 260px;
+    overflow: auto;
+    padding: 12px 14px;
+    border-radius: 12px;
+    background: rgba(7, 17, 31, 0.88);
+    color: #dbe7ff;
+    border: 1px solid rgba(148, 163, 184, 0.16);
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: 0.82rem;
+    line-height: 1.45;
+    white-space: pre-wrap;
+    word-break: break-word;
+}
+
 button.warning {
     background: rgba(251, 191, 36, 0.14);
     color: #ffd66d;
