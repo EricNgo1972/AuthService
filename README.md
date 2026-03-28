@@ -155,6 +155,16 @@ Important behavior:
 - multi-tenant users receive the existing pre-tenant `loginToken`
 - business approvals should stay in the business app; AuthService should only provide biometric identity proof
 
+Integration summary for other apps:
+
+- web apps and desktop apps both use the same 3-step contract:
+  - create request
+  - poll status
+  - exchange auth code
+- AuthService owns the phone UI and passkey/bootstrap flow
+- the calling app owns its own session establishment after exchange
+- external apps should not read Azure Table Storage directly
+
 ## API Surface
 
 Public endpoints:

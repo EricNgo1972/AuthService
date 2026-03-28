@@ -38,7 +38,7 @@
 
         <div class="inline-links">
             <a href="/forgot-password">Forgot password</a>
-            <button type="button" class="link-button" @onclick="TogglePasskeyAsync">Log with your phone</button>
+            <button type="button" class="button secondary phone-login-button" @onclick="TogglePasskeyAsync">Log with your phone</button>
         </div>
 
         @if (ShowPasskeyQr && !string.IsNullOrWhiteSpace(PasskeyRequestId))
@@ -57,14 +57,6 @@
             </div>
         }
 
-        <div class="passkey-panel stack">
-            <div>
-                <p class="eyebrow">Debug</p>
-                <h2>Desktop Log</h2>
-            </div>
-            <p class="muted">Temporary diagnostics for QR login on the desktop page.</p>
-            <div class="debug-log">@DesktopDebugLog</div>
-        </div>
     </div>
 </section>
 

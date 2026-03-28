@@ -186,6 +186,12 @@ code {
     color: #fed7aa;
 }
 
+.phone-login-button {
+    padding: 10px 16px;
+    border-radius: 12px;
+    font-weight: 600;
+}
+
 .hero-status {
     display: flex;
     flex-wrap: wrap;
